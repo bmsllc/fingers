@@ -19,15 +19,18 @@
 #include <sys/time.h>
 
 #define	TITLE_MAX 		50
+#define	SIDE_A			0
+#define	SIDE_B			1
 
 void usage( void );
 void summary( void );
-void generate( void );
+void generate( int );
 void header( char * );
 void footer( void );
 void toolPath( char * , int  );
 int validate( void );
-void seg( int id );
+void seg( int, int );
+void subs( void );
 
 typedef struct	{
 	char * name;
@@ -50,15 +53,17 @@ FILE *	fout;
 
 char  fn[ PATH_MAX ];
 char  * title = "None";
+int		side = SIDE_A;
 float	wlen = 6.5;
 float	wt = .75;
+float	diameter = 0.0;
 float	joints = 5.0;
 float	jointLen = 0.0;
 
 int		verbose = 0;
 #define	VERBOSE 	1
 #define	PROLOGUE	2
-#define	DEBUG 		4
+#define	DEBUG 		4	// not used...
 
 char * pgm = NULL;
 
@@ -67,11 +72,12 @@ main( int argc, char * argv[] )
 {
 	int	rc = 0;
 	int	ch;
-
+	char * s;
+	char   si;
 	fout = stdout;
 
 	pgm = argv[ 0 ];
-	while((ch = getopt(argc,argv,"j:l:o:n:v")) != -1) {
+	while((ch = getopt(argc,argv,"d:j:l:o:n:s:v")) != -1) {
 		switch( ch ) {
       default:
         fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
@@ -79,8 +85,8 @@ main( int argc, char * argv[] )
         exit(1);
         break;
 
-      case 'd': // debug
-		verbose |= DEBUG;
+      case 'd': // tool diameter
+		diameter = atof( optarg );
         break;
 
       case 'l': // workpiece length
@@ -88,7 +94,26 @@ main( int argc, char * argv[] )
         break;
 
       case 'n': // job title
-          title = argv[ optind ];
+          title = argv[ optind - 1 ];
+        break;
+
+      case 's': // edge side A/B
+          s = argv[ optind -1 ];
+		  si = *s;
+		  switch( si ) {
+		  	default : fprintf( stderr, "Invalid side selection: %c\n Use A/B\n", si );
+			opterr = 1;
+			return -3;
+			break;
+		  case 'A' :
+		  case 'a' :
+		  	side = 0;
+			break;
+		  case 'B' :
+		  case 'b' :
+		  	side = 0;
+			break;
+		  }
         break;
 
       case 't': // workpiece thickbess
@@ -104,6 +129,7 @@ main( int argc, char * argv[] )
         break;
 
       case 'o': // output filename
+// should delay file open until we know which side.....
           strncpy( fn, optarg, PATH_MAX);
 		  fout = fopen( fn, "w" );
 		  if( fout == NULL ) {
@@ -115,15 +141,16 @@ main( int argc, char * argv[] )
 	}
 
 	jointLen = wlen / joints;
+
 	if( ! validate() ) {
 		  	fprintf( stderr, "Validation error!!\n", fn );
 			exit( -2 );
 	}
 	summary();
 
-	generate();
-
 	header( title );
+
+	generate( side );
 
 	footer();
 
@@ -138,19 +165,21 @@ usage() {
 
 void
 summary() {
-	fprintf( stdout, "\n%s\n", pgm );
-	fprintf( stdout, "verbose\t%d\n", verbose );
-	fprintf( stdout, "filename\t%s\n", fn );
-	fprintf( stdout, "workpiece length\t%f\n", wlen );
-	fprintf( stdout, "workpiece thickness\t%f\n", wt );
-	fprintf( stdout, "joints \t%f\n", joints );
-	fprintf( stdout, "jointLen \t%f\n", jointLen );
+	fprintf( fout, "'\n'%s\n", pgm );
+	fprintf( fout, "'verbose\t%d\n", verbose );
+	fprintf( fout, "'filename\t%s\n", fn );
+	fprintf( fout, "'workpiece length\t%f\n", wlen );
+	fprintf( fout, "'workpiece thickness\t%f\n", wt );
+	fprintf( fout, "'joints \t%f\n", joints );
+	fprintf( fout, "'jointLen \t%f\n", jointLen );
+	fprintf( fout, "'tool diameter \t%f\n", diameter );
+	fprintf( fout, "\n'Assumes workpiece is homed with no offset....\n'\n" );
 }
 
 //
 // generate all segments of the edge
 void
-generate() {
+generate( int si ) {
 	int	x = 0;
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
@@ -159,37 +188,56 @@ generate() {
 	fprintf( fout, "PAUSE 2\n" );
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'\n" );
-	for( x=0; x < joints; x++ ) {
-		seg( x );
+
+	for( x=1; x < joints; x++ ) {
+		seg( si, x );
 	}
 
 }
 
+// seg - cut out segments....
+// A edges have odd numbered segments removed.
+// B edges have even numbered segments removed.
 void
-seg( int id ) {
+seg( int sideSelect, int id ) {
+
+	if( (sideSelect == SIDE_A) && !(id & 1) ) {
+		return;
+	} else if( (sideSelect == SIDE_B) && (id & 1) ) {
+		return;
+	}
 	toolPath( tools[ toolSelect ].name, id );
-	fprintf( fout, "'Tool Name   = End Mill (0.5 inch)\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000\n" );
-	fprintf( fout, "J2,0.000000,0.000000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.187500\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.187500\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.375000\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.375000\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.562500\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.562500\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.750000\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.750000\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
+	// compute parameters and add a subroutine call to cut out the slot
+	// put parameters into ShopBot variables
+
+	float baseX = 0.0;
+	float baseY = 0.0;
+	float step = diameter / 2.0;
+
+	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
+	fprintf( fout, "&starty = %f	' left edge X\n", baseY + step );	// phoney numbers...
+	fprintf( fout, "\tCALL	sub1	' left edge\n" );
+
+	baseX = 1.0;
+	baseY = 1.0;
+	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
+	fprintf( fout, "&starty = %f	' left edge X\n", baseY + step );	// phoney numbers...
+#if 0
+	fprintf( fout, "\tCALL	sub2	' right edge\n" );
+	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
+	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
+	fprintf( fout, "\tCALL	sub3	' bottom edge\n" );
+	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
+	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
+	fprintf( fout, "\tCALL	sub4	' top edge\n" );
+	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
+	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
+	fprintf( fout, "\tCALL	sub5	' center\n" );
+#endif
+
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 }
+
 void
 header( char * t ) {
 
@@ -219,6 +267,76 @@ footer() {
 	fprintf( fout, "SO,1,0\n" );
 	fprintf( fout, "C#,91					'Run file explaining unit error\n" );
 	fprintf( fout, "END\n" );
+	subs();
+}
+
+void
+subs() {
+
+	fprintf( fout, "'\n'\n" );
+	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
+	fprintf( fout, "'\n'\n'\tsub1 - cut left vertical edge of slot'\n" );
+	fprintf( fout, "'\nsub1:'\n" );
+	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
+	fprintf( fout, "JZ,0.950000					' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
+	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
+	fprintf( fout, "' delay to simulate cut\n" );
+	fprintf( fout, "\tpause 2	' small delay\n" );
+
+
+#if 0
+
+	fprintf( fout, "M3,0.200000,4.650000,-0.187500\n" );
+	fprintf( fout, "M3,1.520000,4.650000,-0.187500\n" );
+	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
+	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
+	fprintf( fout, "M3,0.200000,4.650000,-0.375000\n" );
+	fprintf( fout, "M3,1.520000,4.650000,-0.375000\n" );
+	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
+	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
+	fprintf( fout, "M3,0.200000,4.650000,-0.562500\n" );
+	fprintf( fout, "M3,1.520000,4.650000,-0.562500\n" );
+	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
+	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
+	fprintf( fout, "M3,0.200000,4.650000,-0.750000\n" );
+	fprintf( fout, "M3,1.520000,4.650000,-0.750000\n" );
+	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
+#endif
+
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'\n'\n'\tsub2 - cut right vertical edge of slot'\n" );
+	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
+	fprintf( fout, "JZ,0.950000					' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
+	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
+	fprintf( fout, "' delay to simulate cut\n" );
+	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'\n'\n'\tsub3 - cut bottom edge of slot'\n" );
+	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
+	fprintf( fout, "JZ,0.950000					' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
+	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
+	fprintf( fout, "' delay to simulate cut\n" );
+	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'\n'\n'\tsub4 - cut top edge of slot'\n" );
+	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
+	fprintf( fout, "JZ,0.950000					' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
+	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
+	fprintf( fout, "' delay to simulate cut\n" );
+	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'\n'\n'\tsub5 - cut center of slot'\n" );
+	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
+	fprintf( fout, "JZ,0.950000					' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
+	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
+	fprintf( fout, "' delay to simulate cut\n" );
+	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
 }
 
 void
