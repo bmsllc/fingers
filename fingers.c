@@ -4,7 +4,8 @@
 //
 //	Questions...
 //	(1) Does pgm create just the side requested all both side of an edge ?
-//			curently only what is asked.
+//			curently only what is asked. Should create both sides to avoid
+//			specification differences.
 
 /*
 :! gcc -g -o fingers %
@@ -27,9 +28,13 @@
 #define	TITLE_MAX 		50
 #define	SIDE_A			0
 #define	SIDE_B			1
+#define	SIDE_UNKNOWN	-1
+#define	MAX_TOOL_DIAMETER	0.50
+#define	MAX_JOINT_LENGTH	30.0
+#define	MAX_EDGE_LENGTH		30.0
 
 void usage( void );
-void summary( void );
+void summary( char * );
 void generate( int );
 void header( char * );
 void footer( void );
@@ -55,16 +60,17 @@ FILE *	fout;
 //	-l	workpiece length
 //	-t	workpiece thickness
 //	-j	joints
-//	-t	title
+//	-n	name
 
-char  fn[ PATH_MAX ];
-char  * title = "None";
-int		side = SIDE_A;
-float	wlen = 6.5;
-float	wt = .75;
-float	diameter = 0.0;
-float	joints = 5.0;
-float	jointLen = 0.0;
+char  fn[ PATH_MAX ];			// where to put the ShopBot program
+int		fnSet = 0;				// monitors filename
+char  * name = NULL;			// name provided by the user
+int		side = SIDE_UNKNOWN;	// which side of the joint we are programming for
+float	wlen = 0.0;				// the length of the joint
+float	joints = 0.0;			// how many segments along the joint
+float	thickness = 0.0;		// thickness of the work piece
+float	diameter = 0.0;			// tool diameter provided by the user
+float	jointLen = 0.0;			// calculated segment length
 
 int		verbose = 0;
 #define	VERBOSE 	1
@@ -82,48 +88,53 @@ main( int argc, char * argv[] )
 	char   si;
 	fout = stdout;
 
+	memset( fn, 0, PATH_MAX );
 	pgm = argv[ 0 ];
-	while((ch = getopt(argc,argv,"d:j:l:o:n:s:v")) != -1) {
+	while((ch = getopt(argc,argv,"?d:j:l:o:n:s:t:v")) != -1) {
 		switch( ch ) {
       default:	//  '?' usually
-        fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
+        //fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
+		opterr = 1;
         usage();
         exit(1);
         break;
 
-      case 'd': // tool diameter
+      case '?': 						// tool diameter
+	  	usage();
+		exit(0);
+		break;
+      case 'd': 						// tool diameter
 		diameter = atof( optarg );
         break;
 
-      case 'l': // workpiece length
+      case 'l': 						// workpiece length
 		wlen = atof( optarg );
         break;
 
-      case 'n': // job title
-          title = optarg;		// was argv[ optind - 1 ];
+      case 'n': // job name
+          name = optarg;				// was argv[ optind - 1 ];
         break;
 
       case 's': // edge side A/B
           s = argv[ optind -1 ];
 		  si = *s;
 		  switch( si ) {
-		  	default : fprintf( stderr, "Invalid side selection: %c\n Use A/B\n", si );
+		  	default : fprintf( stderr, "Invalid side selection: %c\t Use A or B\n", si );
 			opterr = 1;
-			return -3;
 			break;
 		  case 'A' :
 		  case 'a' :
-		  	side = 0;
+		  	side = SIDE_A;
 			break;
 		  case 'B' :
 		  case 'b' :
-		  	side = 0;
+		  	side = SIDE_B;
 			break;
 		  }
         break;
 
       case 't': // workpiece thickness
-		wt = atof( optarg );
+		thickness = atof( optarg );
         break;
 
       case 'j': // number of joints
@@ -135,13 +146,8 @@ main( int argc, char * argv[] )
         break;
 
       case 'o': // output filename
-// should delay file open until we know which side.....
           strncpy( fn, optarg, PATH_MAX);
-		  fout = fopen( fn, "w" );
-		  if( fout == NULL ) {
-		  	fprintf( stderr, "Could not open %s\n", fn );
-			exit( -1 );
-		  }
+		  fnSet = 1;
         break;
 		}
 	}
@@ -149,12 +155,21 @@ main( int argc, char * argv[] )
 	jointLen = wlen / joints;
 
 	if( ! validate() ) {
-		  	fprintf( stderr, "Validation error!!\n", fn );
+		  	fprintf( stderr, "\nThe job validation failed!!\n", fn );
+		  	fprintf( stderr, "Please review your job options and retry.\n", fn );
 			exit( -2 );
 	}
-	summary();
 
-	header( title );
+	// open output file
+	fout = fopen( fn, "w" );
+	if( fout == NULL ) {
+		fprintf( stderr, "Could not open %s\n", fn );
+		exit( -1 );
+	}
+
+	summary( name );
+
+	header( name );
 
 	generate( side );
 
@@ -170,12 +185,12 @@ usage() {
 }
 
 void
-summary() {
-	fprintf( fout, "'\n'%s\n", pgm );
+summary( char * n ) {
+	fprintf( fout, "''\n'Job summary for %s\n", n );
 	fprintf( fout, "'verbose\t%d\n", verbose );
 	fprintf( fout, "'filename\t%s\n", fn );
 	fprintf( fout, "'workpiece length\t%f\n", wlen );
-	fprintf( fout, "'workpiece thickness\t%f\n", wt );
+	fprintf( fout, "'workpiece thickness\t%f\n", thickness );
 	fprintf( fout, "'joints \t%f\n", joints );
 	fprintf( fout, "'jointLen \t%f\n", jointLen );
 	fprintf( fout, "'tool diameter \t%f\n", diameter );
@@ -362,13 +377,98 @@ toolPath( char * tool, int id ) {
 }
 
 //
+// output a error message.
+// if rc parameter is non-zero, include a small banner to draw attention to the error (s)
+// that follows.
+
+int
+fail( int rc, char * msg ) {
+	if( rc > 0 ) {
+		fprintf( stderr, "\n\n**************************************************************\n" );
+		fprintf( stderr, "n***********   setup errors     setup errors    ***************\n" );
+		fprintf( stderr, "**************************************************************\n\n" );
+	}
+	fprintf( stderr, "\t%s\n", msg );
+	return 0;
+}
+
+
+//
 // validate job setup
 //
-// returns true if job looks OK.
+// returns true if job looks OK, reasonable, possible.
+//
+// Easy is prone to errors, make user specify all aspects of the job....
 
 int
 validate() {
+#define	BUFLEN	70
 	int	rc = 1;
+	char	buf[ BUFLEN ];
+
+
+	// be careful with untrusted user input arguments....
+	if( name == NULL ) {
+		rc = fail( rc, "No job name specified, use -n option" );
+	}
+
+	if( fnSet == 0 ) {
+		rc = fail( rc, "No output file specified, use -o option" );
+	}
+
+	if( side == SIDE_UNKNOWN ) {
+		rc = fail( rc, "No side specified, use -s option" );
+	} else switch( side ) {
+		default :
+			rc = fail( rc, "Incorrect side specified, use -s option" );
+			break;
+		case SIDE_A :
+		case SIDE_B :
+			break;
+	}
+
+	if( diameter == 0.0 ) {
+		rc = fail( rc, "No tool diameter specified, use -d option" );
+	} else if( diameter < 0.0 ) {
+		rc = fail( rc, "Negative tool diameters are not possible" );
+	} else if( diameter > MAX_TOOL_DIAMETER ) {
+		memset( buf, 0, BUFLEN );
+		snprintf( buf,  BUFLEN, "Tool diameters larger than %.3f are not possible", MAX_TOOL_DIAMETER );
+		rc = fail( rc, buf );
+	}
+
+	if( wlen == 0.0 ) {
+		rc = fail( rc, "No edge length specified, use -l option" );
+	} else if( wlen < 0.0 ) {
+		rc = fail( rc, "Negative length edges are not supported" );
+	} else if( wlen > MAX_EDGE_LENGTH ) {
+		memset( buf, 0, BUFLEN );
+		snprintf( buf,  BUFLEN, "Edges longer than %.3f inches are not supported", MAX_EDGE_LENGTH );
+		rc = fail( rc, buf );
+	}
+
+	if( joints == 0.0 ) {
+		rc = fail( rc, "Number of joint segments need to be specified, use -j option" );
+	} else if( joints < 0.0 ) {
+		rc = fail( rc, "Negative number of joint segments are not possible" );
+	} 
+	
+	// reasonable checks....
+	if( (joints * MAX_TOOL_DIAMETER) >= MAX_EDGE_LENGTH ) {
+		memset( buf, 0, BUFLEN );
+		snprintf( buf,  BUFLEN, "Edges longer than %.3f inches are not supported", MAX_EDGE_LENGTH );
+		rc = fail( rc, buf );
+	}
+
+	if( thickness == 0.0 ) {
+		rc = fail( rc, "Work piece thickness need to be specified, use -t option" );
+	} else if( thickness < 0.0 ) {
+		memset( buf, 0, BUFLEN );
+		snprintf( buf, BUFLEN, "Negative number for work piece (%.3f) thickness are not recommended", thickness );
+		rc = fail( rc, "Negative number for work piece thickness are not possible" );
+	} 
+	
+
 
 	return rc;
 }
