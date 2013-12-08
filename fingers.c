@@ -2,9 +2,15 @@
 //
 // fingers - shopbot program generator for cutting finger joints
 //
+//	Questions...
+//	(1) Does pgm create just the side requested all both side of an edge ?
+//			curently only what is asked.
+
 /*
 :! gcc -g -o fingers %
 */
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -79,7 +85,7 @@ main( int argc, char * argv[] )
 	pgm = argv[ 0 ];
 	while((ch = getopt(argc,argv,"d:j:l:o:n:s:v")) != -1) {
 		switch( ch ) {
-      default:
+      default:	//  '?' usually
         fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
         usage();
         exit(1);
@@ -94,7 +100,7 @@ main( int argc, char * argv[] )
         break;
 
       case 'n': // job title
-          title = argv[ optind - 1 ];
+          title = optarg;		// was argv[ optind - 1 ];
         break;
 
       case 's': // edge side A/B
@@ -116,7 +122,7 @@ main( int argc, char * argv[] )
 		  }
         break;
 
-      case 't': // workpiece thickbess
+      case 't': // workpiece thickness
 		wt = atof( optarg );
         break;
 
@@ -177,7 +183,7 @@ summary() {
 }
 
 //
-// generate all segments of the edge
+// generate all segments of the edge, for just one side of the edge.
 void
 generate( int si ) {
 	int	x = 0;
@@ -189,8 +195,8 @@ generate( int si ) {
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'\n" );
 
-	for( x=1; x < joints; x++ ) {
-		seg( si, x );
+	for( x=1; x < joints; x++ ) {		// for all joints
+		seg( si, x );					// generate a joint subroutine.
 	}
 
 }
@@ -200,6 +206,9 @@ generate( int si ) {
 // B edges have even numbered segments removed.
 void
 seg( int sideSelect, int id ) {
+	int	cside = id - 1;		// computers count from zero...
+	float	yStart = cside * jointLen;		// this is where we start
+	float	xStart = 0.0;					// seg subs reference these points....
 
 	if( (sideSelect == SIDE_A) && !(id & 1) ) {
 		return;
@@ -276,6 +285,7 @@ subs() {
 	fprintf( fout, "'\n'\n" );
 	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
 	fprintf( fout, "'\n'\n'\tsub1 - cut left vertical edge of slot'\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
 	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
 	fprintf( fout, "JZ,0.950000					' raise tool\n" );
@@ -283,6 +293,7 @@ subs() {
 	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
 	fprintf( fout, "' delay to simulate cut\n" );
 	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
 
 
 #if 0
@@ -305,7 +316,9 @@ subs() {
 #endif
 
 	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
 	fprintf( fout, "'\n'\n'\tsub2 - cut right vertical edge of slot'\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
 	fprintf( fout, "JZ,0.950000					' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
