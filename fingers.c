@@ -25,22 +25,29 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
+#define	PGM_NAME		"Fingers"
+#define	PGM_VERSION		"1.0"
+#define	OPTION_STRING	"?c:d:j:l:o:n:s:t:v"
+
 #define	TITLE_MAX 		50
+
 #define	SIDE_A			0
 #define	SIDE_B			1
+#define	SIDE_BOTH		3
 #define	SIDE_UNKNOWN	-1
+
 #define	MAX_TOOL_DIAMETER	0.50
 #define	MAX_JOINT_LENGTH	30.0
 #define	MAX_EDGE_LENGTH		30.0
 
 void usage( void );
-void summary( char * );
+void summary( char *, char * );
 void generate( int );
 void header( char * );
 void footer( void );
 void toolPath( char * , int  );
 int validate( void );
-void seg( int, int );
+void cut( int, int );
 void subs( void );
 
 typedef struct	{
@@ -61,6 +68,7 @@ FILE *	fout;
 //	-t	workpiece thickness
 //	-j	joints
 //	-n	name
+//	-c	cut depth
 
 char  fn[ PATH_MAX ];			// where to put the ShopBot program
 int		fnSet = 0;				// monitors filename
@@ -71,6 +79,7 @@ float	joints = 0.0;			// how many segments along the joint
 float	thickness = 0.0;		// thickness of the work piece
 float	diameter = 0.0;			// tool diameter provided by the user
 float	jointLen = 0.0;			// calculated segment length
+float	cutDepth = 0.0;			// max cut depth
 
 int		verbose = 0;
 #define	VERBOSE 	1
@@ -86,11 +95,12 @@ main( int argc, char * argv[] )
 	int	ch;
 	char * s;
 	char   si;
+
 	fout = stdout;
 
 	memset( fn, 0, PATH_MAX );
 	pgm = argv[ 0 ];
-	while((ch = getopt(argc,argv,"?d:j:l:o:n:s:t:v")) != -1) {
+	while((ch = getopt(argc,argv, OPTION_STRING )) != -1) {
 		switch( ch ) {
       default:	//  '?' usually
         //fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
@@ -103,6 +113,11 @@ main( int argc, char * argv[] )
 	  	usage();
 		exit(0);
 		break;
+
+      case 'c': 						// cut depth
+		cutDepth = atof( optarg );
+        break;
+
       case 'd': 						// tool diameter
 		diameter = atof( optarg );
         break;
@@ -160,35 +175,59 @@ main( int argc, char * argv[] )
 			exit( -2 );
 	}
 
-	// open output file
-	fout = fopen( fn, "w" );
-	if( fout == NULL ) {
-		fprintf( stderr, "Could not open %s\n", fn );
-		exit( -1 );
+
+	switch( side ) {
+		default :
+		  	fprintf( stderr, "Side selection mix-up, quitting.\n", fn );
+			break;
+
+		case SIDE_BOTH:
+			generate( SIDE_A );
+			generate( SIDE_B );
+			break;
+		case SIDE_A:
+			generate( SIDE_A );
+			break;
+		case SIDE_B:
+			generate( SIDE_B );
+			break;
 	}
-
-	summary( name );
-
-	header( name );
-
-	generate( side );
-
-	footer();
 
 	fclose( fout );
 	return rc;
 }
 
-void
-usage() {
-	fprintf( stderr, "%s - usage....\n", pgm );
-}
+//
+// usage - give helpful information about this pogram
+// 
 
 void
-summary( char * n ) {
-	fprintf( fout, "''\n'Job summary for %s\n", n );
+usage() {
+	fprintf( stderr, "%s - %s\n", PGM_NAME, PGM_VERSION );
+	fprintf( stderr, "%s - %s {%s}\n", pgm, OPTION_STRING );
+	fprintf( stderr, "\n\n" );
+	fprintf( stderr, "\t%s - %s\n", "?", "Ask for help." );
+	fprintf( stderr, "\t%s - %s\n", "c","Maximum tool cut depth.");
+	fprintf( stderr, "\t%s - %s\n", "d","Tool diameter.");
+	fprintf( stderr, "\t%s - %s\n", "j","Number of joint segments.");
+	fprintf( stderr, "\t%s - %s\n", "l","Edge length." );
+	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
+	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
+	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A or B. Default is both." );
+	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness." );
+	fprintf( stderr, "\t%s - %s\n", "v","Be verbose." );
+	fprintf( stderr, "\n\n" );
+}
+
+//
+// summary - summarize this program's parameters and actions
+//
+
+void
+summary( char * n, char * filename ) {
+	fprintf( fout, "'\n'Job summary for %s\n", n );
 	fprintf( fout, "'verbose\t%d\n", verbose );
-	fprintf( fout, "'filename\t%s\n", fn );
+	fprintf( fout, "'filename\t%s\n", filename );
 	fprintf( fout, "'workpiece length\t%f\n", wlen );
 	fprintf( fout, "'workpiece thickness\t%f\n", thickness );
 	fprintf( fout, "'joints \t%f\n", joints );
@@ -198,10 +237,28 @@ summary( char * n ) {
 }
 
 //
-// generate all segments of the edge, for just one side of the edge.
+// generate all segments of the edge, for one or both sides of the edge.
+//
 void
 generate( int si ) {
 	int	x = 0;
+	char	fname[ PATH_MAX ];
+
+	strcpy( fname, fn );
+	if( si == SIDE_A )
+		strcat( fname, "_A" );
+	else
+		strcat( fname, "_B" );
+
+	// open output file
+	fout = fopen( fname, "w" );
+	if( fout == NULL ) {
+		fprintf( stderr, "Could not open %s\n", fn );
+		exit( -1 );
+	}
+
+	summary( name , fname);
+	header( name );
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'Turning router ON\n" );
@@ -210,17 +267,20 @@ generate( int si ) {
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'\n" );
 
-	for( x=1; x < joints; x++ ) {		// for all joints
-		seg( si, x );					// generate a joint subroutine.
+	for( x=1; x <= joints; x++ ) {		// for all joints
+		cut( si, x );					// generate a joint subroutine.
 	}
+	footer();
+
+	fclose( fout );
 
 }
 
-// seg - cut out segments....
+// cut - cut out segments....
 // A edges have odd numbered segments removed.
 // B edges have even numbered segments removed.
 void
-seg( int sideSelect, int id ) {
+cut( int sideSelect, int id ) {
 	int	cside = id - 1;		// computers count from zero...
 	float	yStart = cside * jointLen;		// this is where we start
 	float	xStart = 0.0;					// seg subs reference these points....
@@ -230,34 +290,23 @@ seg( int sideSelect, int id ) {
 	} else if( (sideSelect == SIDE_B) && (id & 1) ) {
 		return;
 	}
-	toolPath( tools[ toolSelect ].name, id );
+
+	toolPath( tools[ toolSelect ].name, id );			// probably needs to change....
 	// compute parameters and add a subroutine call to cut out the slot
 	// put parameters into ShopBot variables
 
-	float baseX = 0.0;
-	float baseY = 0.0;
-	float step = diameter / 2.0;
+	float step = diameter / 2.0;				// establish work zone
+	float baseX = (float) (0.0 - step);			// sides...
+	float baseY = (float) (cside * jointLen);
+	float top = (float) id * jointLen;			// top and bottom
+	float bot = (float) cside * jointLen;
+
+	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
+	fprintf( fout, "&starty = %f	' left edge Y\n", baseY + step );	// phoney numbers...
+	fprintf( fout, "\tCALL	sub1	' cut work piece\n" );
 
 	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
 	fprintf( fout, "&starty = %f	' left edge X\n", baseY + step );	// phoney numbers...
-	fprintf( fout, "\tCALL	sub1	' left edge\n" );
-
-	baseX = 1.0;
-	baseY = 1.0;
-	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
-	fprintf( fout, "&starty = %f	' left edge X\n", baseY + step );	// phoney numbers...
-#if 0
-	fprintf( fout, "\tCALL	sub2	' right edge\n" );
-	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
-	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
-	fprintf( fout, "\tCALL	sub3	' bottom edge\n" );
-	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
-	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
-	fprintf( fout, "\tCALL	sub4	' top edge\n" );
-	fprintf( fout, "&startx = %f	' left edge X\n", -5.0 );
-	fprintf( fout, "&starty = %f	' left edge X\n", 1.0 );	// phoney numbers...
-	fprintf( fout, "\tCALL	sub5	' center\n" );
-#endif
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 }
@@ -265,9 +314,14 @@ seg( int sideSelect, int id ) {
 void
 header( char * t ) {
 
+	time_t	now = 0;
+	char *	today ;
+	
+	time( &now);
+
 	fprintf( fout, "'%s\n", t );
-	fprintf( fout, "'File created: blah blah\n" );
-	fprintf( fout, "'By Bill\n" );
+	fprintf( fout, "'File created: %s\n", ctime( &now) );
+	fprintf( fout, "'By %s - %s\n", PGM_NAME, PGM_VERSION );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'SHOPBOT FILE IN INCHES\n" );
 	fprintf( fout, "' 25 is UNIT, 0 or 1. asuming 0 means inches...\n" );
@@ -402,10 +456,10 @@ fail( int rc, char * msg ) {
 
 int
 validate() {
-#define	BUFLEN	70
+#define	BUFLEN	80
 	int	rc = 1;
 	char	buf[ BUFLEN ];
-
+	int		diaOK = 1;
 
 	// be careful with untrusted user input arguments....
 	if( name == NULL ) {
@@ -428,13 +482,38 @@ validate() {
 	}
 
 	if( diameter == 0.0 ) {
+		diaOK = 0;
 		rc = fail( rc, "No tool diameter specified, use -d option" );
 	} else if( diameter < 0.0 ) {
+		diaOK = 0;
 		rc = fail( rc, "Negative tool diameters are not possible" );
 	} else if( diameter > MAX_TOOL_DIAMETER ) {
+		diaOK = 0;
 		memset( buf, 0, BUFLEN );
 		snprintf( buf,  BUFLEN, "Tool diameters larger than %.3f are not possible", MAX_TOOL_DIAMETER );
 		rc = fail( rc, buf );
+	}
+
+	if( cutDepth == 0.0 ) {
+		rc = fail( rc, "No tool cut depth specified, use -c option" );
+	} else if( cutDepth < 0.0 ) {
+		rc = fail( rc, "Negative tool cutDepth are not supported" );
+	} else if( diaOK == 1 ) {
+		if( cutDepth > diameter ) {
+			memset( buf, 0, BUFLEN );
+			snprintf( buf,  BUFLEN, "Tool cut depth greater than the tool diameter (%.3f) are not reccommended", diameter );
+			rc = fail( rc, buf );
+		}	
+	} else {
+		rc = fail( rc, "No tool cut depth verification due to diameter parameter problems" );
+	}
+
+	if( diaOK == 1 ) {
+		if( diameter >= jointLen ) {
+			rc = fail( rc, "The tool diameter specified is too large for the joint" );
+		}
+	} else {
+		rc = fail( rc, "No tool diameter depth, joint segment length  verification due to diameter parameter problems" );
 	}
 
 	if( wlen == 0.0 ) {
