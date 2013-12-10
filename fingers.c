@@ -204,7 +204,7 @@ main( int argc, char * argv[] )
 void
 usage() {
 	fprintf( stderr, "%s - %s\n", PGM_NAME, PGM_VERSION );
-	fprintf( stderr, "%s - %s {%s}\n", pgm, OPTION_STRING );
+	fprintf( stderr, "%s - {%s}\n", pgm, OPTION_STRING );
 	fprintf( stderr, "\n\n" );
 	fprintf( stderr, "\t%s - %s\n", "?", "Ask for help." );
 	fprintf( stderr, "\t%s - %s\n", "c","Maximum tool cut depth.");
@@ -238,6 +238,8 @@ summary( char * n, char * filename ) {
 
 //
 // generate all segments of the edge, for one or both sides of the edge.
+// A edges have odd numbered segments removed.
+// B edges have even numbered segments removed.
 //
 void
 generate( int si ) {
@@ -246,9 +248,9 @@ generate( int si ) {
 
 	strcpy( fname, fn );
 	if( si == SIDE_A )
-		strcat( fname, "_A" );
+		strcat( fname, "_A.sbp" );
 	else
-		strcat( fname, "_B" );
+		strcat( fname, "_B.sbp" );
 
 	// open output file
 	fout = fopen( fname, "w" );
@@ -277,8 +279,6 @@ generate( int si ) {
 }
 
 // cut - cut out segments....
-// A edges have odd numbered segments removed.
-// B edges have even numbered segments removed.
 void
 cut( int sideSelect, int id ) {
 	int	cside = id - 1;		// computers count from zero...
@@ -292,6 +292,7 @@ cut( int sideSelect, int id ) {
 	}
 
 	toolPath( tools[ toolSelect ].name, id );			// probably needs to change....
+														// to construct actual parameters for tool
 	// compute parameters and add a subroutine call to cut out the slot
 	// put parameters into ShopBot variables
 
@@ -301,12 +302,11 @@ cut( int sideSelect, int id ) {
 	float top = (float) id * jointLen;			// top and bottom
 	float bot = (float) cside * jointLen;
 
-	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
-	fprintf( fout, "&starty = %f	' left edge Y\n", baseY + step );	// phoney numbers...
+	fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
+	fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
+	fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + diameter );	// 
+	fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
 	fprintf( fout, "\tCALL	sub1	' cut work piece\n" );
-
-	fprintf( fout, "&startx = %f	' left edge X\n", baseX - step );
-	fprintf( fout, "&starty = %f	' left edge X\n", baseY + step );	// phoney numbers...
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 }
@@ -329,6 +329,8 @@ header( char * t ) {
 	fprintf( fout, "C#,90				 	'Lookup offset values\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "TR,12000,1\n" );
+	fprintf( fout, "MS,0.08,0.05					' move speed: cut,plunge\n" );
+	fprintf( fout, "JS,0.15,0.05					' jog speeds\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'----------------------------------------------------------------\n" );
@@ -348,77 +350,36 @@ footer() {
 	subs();
 }
 
+//
+// subs - create subroutine to perform the actual cutting.
+// for best accuracy the cut should move from right to left through the work piece. (jig specific ?)
+// However, the easy way to do this is via the "cut rectangle" which does not allow for that control.
+//
+// Notes
+//		Using CR (cut rectangle) and preset variables.
 void
 subs() {
 
 	fprintf( fout, "'\n'\n" );
 	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
-	fprintf( fout, "'\n'\n'\tsub1 - cut left vertical edge of slot'\n" );
+	fprintf( fout, "'\n'\n'\tsub1 - cut segment of edge for a slot\n" );
+	fprintf( fout, "' starting from a specific location at the bottom of a segment. remove the segment from the edge.\n" );
+	fprintf( fout, "' &startX and &startY denote the starting location.\n" );
+	fprintf( fout, "' &endX and &endY denotes the end of the cut.\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000					' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
-	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
-	fprintf( fout, "' delay to simulate cut\n" );
-	fprintf( fout, "\tpause 2	' small delay\n" );
+	fprintf( fout, "MS,0.08,0.05						' move speed: cut,plunge\n" );
+	fprintf( fout, "JS,0.15,0.05						' jog speeds\n" );
+	fprintf( fout, "JZ,0.950000							' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+	fprintf( fout, "J3,&startX,&startY,0.200000			' position tool for cut\n" );
+	fprintf( fout, "CR,&lenX,&lenY,'I',1,4,0.25,3,2,1	' cut rectangle built-i\n" );
+	fprintf( fout, "JZ,0.950000							' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "'\n\tRETURN'\n'\n" );
-
-
-#if 0
-
-	fprintf( fout, "M3,0.200000,4.650000,-0.187500\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.187500\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.375000\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.375000\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.562500\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.562500\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-	fprintf( fout, "J3,0.200000,4.650000,0.200000\n" );
-	fprintf( fout, "M3,0.200000,4.650000,-0.750000\n" );
-	fprintf( fout, "M3,1.520000,4.650000,-0.750000\n" );
-	fprintf( fout, "J3,1.520000,4.650000,0.200000\n" );
-#endif
-
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
-	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
-	fprintf( fout, "'\n'\n'\tsub2 - cut right vertical edge of slot'\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000					' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
-	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
-	fprintf( fout, "' delay to simulate cut\n" );
-	fprintf( fout, "\tpause 2	' small delay\n" );
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
-	fprintf( fout, "'\n'\n'\tsub3 - cut bottom edge of slot'\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000					' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
-	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
-	fprintf( fout, "' delay to simulate cut\n" );
-	fprintf( fout, "\tpause 2	' small delay\n" );
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
-	fprintf( fout, "'\n'\n'\tsub4 - cut top edge of slot'\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000					' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
-	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
-	fprintf( fout, "' delay to simulate cut\n" );
-	fprintf( fout, "\tpause 2	' small delay\n" );
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
-	fprintf( fout, "'\n'\n'\tsub5 - cut center of slot'\n" );
-	fprintf( fout, "MS,0.08,0.05				' move speed: cut,plunge\n" );
-	fprintf( fout, "JZ,0.950000					' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000		' home tool\n" );
-	fprintf( fout, "J3,&startx,&starty,0.200000		' position tool for cut\n" );
-	fprintf( fout, "' delay to simulate cut\n" );
-	fprintf( fout, "\tpause 2	' small delay\n" );
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
+
 }
 
 void
