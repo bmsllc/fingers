@@ -127,7 +127,7 @@ main( int argc, char * argv[] )
         break;
 
       case 'n': // job name
-          name = optarg;				// was argv[ optind - 1 ];
+          name = optarg;				// job name
         break;
 
       case 's': // edge side A/B
@@ -144,6 +144,10 @@ main( int argc, char * argv[] )
 		  case 'B' :
 		  case 'b' :
 		  	side = SIDE_B;
+			break;
+		  case 'C' :
+		  case 'c' :
+		  	side = SIDE_BOTH;
 			break;
 		  }
         break;
@@ -281,7 +285,7 @@ generate( int si ) {
 // cut - cut out segments....
 void
 cut( int sideSelect, int id ) {
-	int	cside = id - 1;		// computers count from zero...
+	int	cside = id - 1;						// computers count from zero...
 	float	yStart = cside * jointLen;		// this is where we start
 	float	xStart = 0.0;					// seg subs reference these points....
 
@@ -304,9 +308,11 @@ cut( int sideSelect, int id ) {
 
 	fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
 	fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
+	fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
+	fprintf( fout, "&top = %.3f		' top of work area\n",  top);	// 
 	fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + diameter );	// 
 	fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
-	fprintf( fout, "\tCALL	sub1	' cut work piece\n" );
+	fprintf( fout, "\tGOSUB	sub1	' cut work piece\n" );
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 }
@@ -331,6 +337,7 @@ header( char * t ) {
 	fprintf( fout, "TR,12000,1\n" );
 	fprintf( fout, "MS,0.08,0.05					' move speed: cut,plunge\n" );
 	fprintf( fout, "JS,0.15,0.05					' jog speeds\n" );
+	fprintf( fout, "VC,%.3f						' cutter diameter\n", diameter );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'----------------------------------------------------------------\n" );
@@ -366,6 +373,10 @@ subs() {
 	fprintf( fout, "' starting from a specific location at the bottom of a segment. remove the segment from the edge.\n" );
 	fprintf( fout, "' &startX and &startY denote the starting location.\n" );
 	fprintf( fout, "' &endX and &endY denotes the end of the cut.\n" );
+	fprintf( fout, "'&bot  = bottom of work area\n");	// 
+	fprintf( fout, "'&top  = top of work area\n" );	// 
+	fprintf( fout, "'&lenX = length of x edge\n" );	// 
+	fprintf( fout, "'&lenY = length of y edge\n" );	// 
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
 	fprintf( fout, "MS,0.08,0.05						' move speed: cut,plunge\n" );
@@ -439,6 +450,7 @@ validate() {
 			break;
 		case SIDE_A :
 		case SIDE_B :
+		case SIDE_BOTH :
 			break;
 	}
 
