@@ -27,7 +27,7 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?c:d:j:l:o:n:s:t:v"
+#define	OPTION_STRING	"?Bc:d:j:l:o:n:s:t:v"
 
 #define	TITLE_MAX 		50
 
@@ -40,6 +40,7 @@
 #define	MAX_JOINT_LENGTH	30.0
 #define	MAX_EDGE_LENGTH		30.0
 
+void dummy( void  );
 void usage( void );
 void summary( char *, char * );
 void generate( int );
@@ -112,6 +113,11 @@ main( int argc, char * argv[] )
       case '?': 						// tool diameter
 	  	usage();
 		exit(0);
+		break;
+
+      case 'B': 						// stuff clipboard
+	  	dummy();
+		exit( 0 );
 		break;
 
       case 'c': 						// cut depth
@@ -211,6 +217,7 @@ usage() {
 	fprintf( stderr, "%s - {%s}\n", pgm, OPTION_STRING );
 	fprintf( stderr, "\n\n" );
 	fprintf( stderr, "\t%s - %s\n", "?", "Ask for help." );
+	fprintf( stderr, "\t%s - %s\n", "B","Put dummy command line in clipboard.");
 	fprintf( stderr, "\t%s - %s\n", "c","Maximum tool cut depth.");
 	fprintf( stderr, "\t%s - %s\n", "d","Tool diameter.");
 	fprintf( stderr, "\t%s - %s\n", "j","Number of joint segments.");
@@ -221,6 +228,18 @@ usage() {
 	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness." );
 	fprintf( stderr, "\t%s - %s\n", "v","Be verbose." );
 	fprintf( stderr, "\n\n" );
+}
+
+void
+dummy( ) {
+FILE *	cb;
+
+	cb = fopen( "/dev/clipboard", "w" );
+	if( cb == NULL ) {
+		fprintf( stderr, "Error openinmg clipboard...\n\n" );
+	}
+	fprintf( cb, "%s -c -d -j -l -n -o -s -t", pgm );
+	fclose( cb );
 }
 
 //
@@ -301,7 +320,7 @@ cut( int sideSelect, int id ) {
 	// put parameters into ShopBot variables
 
 	float step = diameter / 2.0;				// establish work zone
-	float baseX = (float) (0.0 - step);			// sides...
+	float baseX = (float) 0.0;					// sides...
 	float baseY = (float) (cside * jointLen);
 	float top = (float) id * jointLen;			// top and bottom
 	float bot = (float) cside * jointLen;
@@ -364,6 +383,7 @@ footer() {
 //
 // Notes
 //		Using CR (cut rectangle) and preset variables.
+//		.25 is a deep cut...
 void
 subs() {
 
@@ -384,7 +404,7 @@ subs() {
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "J3,&startX,&startY,0.200000			' position tool for cut\n" );
-	fprintf( fout, "CR,&lenX,&lenY,'I',1,4,0.25,3,2,1	' cut rectangle built-i\n" );
+	fprintf( fout, "CR,&lenX,&lenY,I,1,4,0.25,3,2,1		' cut rectangle built-in\n" );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "'\n\tRETURN'\n'\n" );
