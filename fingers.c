@@ -19,6 +19,7 @@
 #include <limits.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <sys/types.h>
@@ -39,6 +40,7 @@
 #define	MAX_TOOL_DIAMETER	0.50
 #define	MAX_JOINT_LENGTH	30.0
 #define	MAX_EDGE_LENGTH		30.0
+#define MAX_DEPTH_RATIO		5.0
 
 void dummy( void  );
 void usage( void );
@@ -50,6 +52,7 @@ void toolPath( char * , int  );
 int validate( void );
 void cut( int, int );
 void subs( void );
+float evenCuts( float * cutD, float ratio );
 
 typedef struct	{
 	char * name;
@@ -224,8 +227,8 @@ usage() {
 	fprintf( stderr, "\t%s - %s\n", "l","Edge length." );
 	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
 	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
-	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A or B. Default is both." );
-	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness." );
+	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A, B, or C. Default is both (C)." );
+	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness.( finger depth also)" );
 	fprintf( stderr, "\t%s - %s\n", "v","Be verbose." );
 	fprintf( stderr, "\n\n" );
 }
@@ -305,6 +308,7 @@ generate( int si ) {
 void
 cut( int sideSelect, int id ) {
 	int	cside = id - 1;						// computers count from zero...
+
 	float	yStart = cside * jointLen;		// this is where we start
 	float	xStart = 0.0;					// seg subs reference these points....
 
@@ -329,7 +333,7 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 	fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
 	fprintf( fout, "&top = %.3f		' top of work area\n",  top);	// 
-	fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + diameter );	// 
+	fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
 	fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
 	fprintf( fout, "\tGOSUB	sub1	' cut work piece\n" );
 
@@ -376,6 +380,19 @@ footer() {
 	subs();
 }
 
+// evenCut - compute cut passes and cutDepth per pass
+//
+
+float
+evenCuts( float * cutD, float step ) {
+	float cut = * cutD;
+	float passes = round( cut / step );
+
+	*cutD = thickness / passes;
+
+	return passes;
+}
+
 //
 // subs - create subroutine to perform the actual cutting.
 // for best accuracy the cut should move from right to left through the work piece. (jig specific ?)
@@ -386,6 +403,9 @@ footer() {
 //		.25 is a deep cut...
 void
 subs() {
+
+	float	theCut = thickness;
+	float	passes = evenCuts( &theCut, (diameter / MAX_DEPTH_RATIO) );
 
 	fprintf( fout, "'\n'\n" );
 	fprintf( fout, "'------------------------ subroutines -----------------------------\n" );
@@ -403,8 +423,9 @@ subs() {
 	fprintf( fout, "JS,0.15,0.05						' jog speeds\n" );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
-	fprintf( fout, "J3,&startX,&startY,0.200000			' position tool for cut\n" );
-	fprintf( fout, "CR,&lenX,&lenY,I,1,4,0.25,3,2,1		' cut rectangle built-in\n" );
+	fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for CR cut\n" );
+	fprintf( fout, "CR,&lenX,&lenY,I,1,4,%s%.3f,%.3f,2,1		' cut rectangle built-in\n", 
+			 ( theCut < 0.0 ? "" : "-" ), theCut, passes );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "'\n\tRETURN'\n'\n" );
@@ -489,12 +510,12 @@ validate() {
 
 	if( cutDepth == 0.0 ) {
 		rc = fail( rc, "No tool cut depth specified, use -c option" );
-	} else if( cutDepth < 0.0 ) {
-		rc = fail( rc, "Negative tool cutDepth are not supported" );
+	} else if( cutDepth > 0.0 ) {
+		rc = fail( rc, "Positive tool cutDepth are not effective" );
 	} else if( diaOK == 1 ) {
-		if( cutDepth > diameter ) {
+		if( cutDepth >= (diameter / MAX_DEPTH_RATIO) ) {
 			memset( buf, 0, BUFLEN );
-			snprintf( buf,  BUFLEN, "Tool cut depth greater than the tool diameter (%.3f) are not reccommended", diameter );
+			snprintf( buf,  BUFLEN, "Tool cut depths greater than the tool diameter / %.3f are not reccommended", MAX_DEPTH_RATIO );
 			rc = fail( rc, buf );
 		}	
 	} else {
