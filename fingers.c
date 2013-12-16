@@ -1,12 +1,13 @@
 
 //
 // fingers - shopbot program generator for cutting finger joints
-//
+// aka comb joint, box-pin or box joint
 //	Questions...
 //	(1) Does pgm create just the side requested all both side of an edge ?
 //			curently only what is asked. Should create both sides to avoid
 //			specification differences.
-
+// Softwood Cedar Pine Spruce
+// Hardwood Ash Aspen Balsa Birch Cherry Elm Hazel Linden/ Lime/ Basswood Mahogany Maple Oak Teak Walnut
 /*
 :! gcc -g -o fingers %
 */
@@ -28,7 +29,23 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?Bc:d:j:l:o:n:s:t:v"
+#define	OPTION_STRING	"?Bc:d:j:l:m:n:o:s:t:vw:"
+
+// command line parameters...
+//  -B put dummy command in clipboard
+//  -c cutDepth
+//  -d tool diameter
+//  -j number of joint segments
+//  -l length of edge
+//	-m cut method
+//	-n job name
+//	-o output filename
+//	-l	workpiece length
+//	-s joint side to cut
+//	-t	workpiece thickness
+//	-v verbose flag
+//  -c cutWidth
+
 
 #define	TITLE_MAX 		50
 
@@ -41,6 +58,10 @@
 #define	MAX_JOINT_LENGTH	30.0
 #define	MAX_EDGE_LENGTH		30.0
 #define MAX_DEPTH_RATIO		5.0
+#define MAX_CUT_WIDTH		0.50	// as a percentage
+		
+#defime	METHOD_ONE				1
+#define	METHOD_TWO				2
 
 void dummy( void  );
 void usage( void );
@@ -66,14 +87,7 @@ int		toolSelect = 1;
 // foutput to stdout unless a filename is given;
 FILE *	fout;
 
-// command line parameters...
-//	-o output filename
-//	-l	workpiece length
-//	-t	workpiece thickness
-//	-j	joints
-//	-n	name
-//	-c	cut depth
-
+int		method = METHOD_ONE;	// default cut method
 char  fn[ PATH_MAX ];			// where to put the ShopBot program
 int		fnSet = 0;				// monitors filename
 char  * name = NULL;			// name provided by the user
@@ -84,11 +98,25 @@ float	thickness = 0.0;		// thickness of the work piece
 float	diameter = 0.0;			// tool diameter provided by the user
 float	jointLen = 0.0;			// calculated segment length
 float	cutDepth = 0.0;			// max cut depth
+float	cutWidth = 0.0;			// max cut width
+float	moveSpeed = 0.08;		// actual machine number
+float	plungeSpeed = 0.05;	// actual machine number
+float	jogSpeed = 0.15;		// actual machine number
+float	jogPlungeSpeed = 0.15;	// actual machine number
 
 int		verbose = 0;
 #define	VERBOSE 	1
 #define	PROLOGUE	2
 #define	DEBUG 		4	// not used...
+
+// these variables are used during the actual cuts
+float step = 0.0;
+float baseX = 0.0;
+float baseY = 0.0;
+float top = 0.0;
+float high = 0.0;
+float bot = 0.0;
+float low = 0.0;
 
 char * pgm = NULL;
 
@@ -135,6 +163,10 @@ main( int argc, char * argv[] )
 		wlen = atof( optarg );
         break;
 
+      case 'm': 						// cutting method
+		method = atoi( optarg );
+        break;
+
       case 'n': // job name
           name = optarg;				// job name
         break;
@@ -177,6 +209,11 @@ main( int argc, char * argv[] )
           strncpy( fn, optarg, PATH_MAX);
 		  fnSet = 1;
         break;
+      
+	  case 'w': 						// cut width
+		cutWidth = atof( optarg );
+        break;
+
 		}
 	}
 
@@ -220,16 +257,17 @@ usage() {
 	fprintf( stderr, "%s - {%s}\n", pgm, OPTION_STRING );
 	fprintf( stderr, "\n\n" );
 	fprintf( stderr, "\t%s - %s\n", "?", "Ask for help." );
-	fprintf( stderr, "\t%s - %s\n", "B","Put dummy command line in clipboard.");
-	fprintf( stderr, "\t%s - %s\n", "c","Maximum tool cut depth.");
+	fprintf( stderr, "\t%s - %s\n", "B","Put dummy command line in clipboard, for pasting....");
+	fprintf( stderr, "\t%s - %s\n", "c","Maximum tool cut depth, per pass.");
 	fprintf( stderr, "\t%s - %s\n", "d","Tool diameter.");
 	fprintf( stderr, "\t%s - %s\n", "j","Number of joint segments.");
 	fprintf( stderr, "\t%s - %s\n", "l","Edge length." );
-	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
 	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
+	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
 	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A, B, or C. Default is both (C)." );
-	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness.( finger depth also)" );
+	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness, i.e. finger length..." );
 	fprintf( stderr, "\t%s - %s\n", "v","Be verbose." );
+	fprintf( stderr, "\t%s - %s\n", "w","Maximum tool cut width, per pass.");
 	fprintf( stderr, "\n\n" );
 }
 
@@ -241,7 +279,8 @@ FILE *	cb;
 	if( cb == NULL ) {
 		fprintf( stderr, "Error openinmg clipboard...\n\n" );
 	}
-	fprintf( cb, "%s -c -d -j -l -n -o -s -t", pgm );
+	// #define	OPTION_STRING	"?Bc:d:j:l:n:o:s:t:vw:"
+	fprintf( cb, "%s -c -d -j -l -n -o -s -t -w", pgm );
 	fclose( cb );
 }
 
@@ -304,13 +343,17 @@ generate( int si ) {
 
 }
 
-// cut - cut out segments....
+// cut - cut out segments.... (profiles)
+//
+// using the built-in CR command.
+//
+// CR may not be ideal for this process. The design of the jig suggests that a right to left
+// motion when cutting would be better than a left to right motion. A second cutting method may be 
+// provided for in the future.
+
 void
 cut( int sideSelect, int id ) {
-	int	cside = id - 1;						// computers count from zero...
-
-	float	yStart = cside * jointLen;		// this is where we start
-	float	xStart = 0.0;					// seg subs reference these points....
+	int	segment = id - 1;					// computers count from zero...
 
 	if( (sideSelect == SIDE_A) && !(id & 1) ) {
 		return;
@@ -318,17 +361,21 @@ cut( int sideSelect, int id ) {
 		return;
 	}
 
-	toolPath( tools[ toolSelect ].name, id );			// probably needs to change....
+	//toolPath( tools[ toolSelect ].name, id );			// probably needs to change....
 														// to construct actual parameters for tool
 	// compute parameters and add a subroutine call to cut out the slot
 	// put parameters into ShopBot variables
 
-	float step = diameter / 2.0;				// establish work zone
-	float baseX = (float) 0.0;					// sides...
-	float baseY = (float) (cside * jointLen);
-	float top = (float) id * jointLen;			// top and bottom
-	float bot = (float) cside * jointLen;
+	step = diameter / 2.0;					// establish work zone
+	baseX = (float) 0.0;					// sides...
+	baseY = (float) (segment * jointLen);
+	top = (float) id * jointLen;			// top and bottom
+	high = top - diameter;					// end of work area after top cut
+	bot = (float) segment * jointLen;
+	low = bot + cutWidth;					// start of work area after bot cut
+// assumes that cutWidth < diameter
 
+// sub1 setup
 	fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
 	fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 	fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
@@ -340,6 +387,9 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 }
 
+// header - add machine setup to output file.
+//
+// Move and jog speeds could be an option...
 void
 header( char * t ) {
 
@@ -358,8 +408,8 @@ header( char * t ) {
 	fprintf( fout, "C#,90				 	'Lookup offset values\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "TR,12000,1\n" );
-	fprintf( fout, "MS,0.08,0.05					' move speed: cut,plunge\n" );
-	fprintf( fout, "JS,0.15,0.05					' jog speeds\n" );
+	fprintf( fout, "MS,%.3f,%.3f					' move speed: cut,plunge\n", moveSpeed, plungeSpeed );
+	fprintf( fout, "JS,%.3f,%.3f					' jog speeds\n", jogSpeed, jogPlungeSpeed );
 	fprintf( fout, "VC,%.3f						' cutter diameter\n", diameter );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'\n" );
@@ -418,9 +468,9 @@ subs() {
 	fprintf( fout, "'&lenX = length of x edge\n" );	// 
 	fprintf( fout, "'&lenY = length of y edge\n" );	// 
 	fprintf( fout, "'------------------------------------------------------------------\n" );
+	fprintf( fout, "'-- Use the built-in Cut Rectangle to remove material           ---\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
-	fprintf( fout, "MS,0.08,0.05						' move speed: cut,plunge\n" );
-	fprintf( fout, "JS,0.15,0.05						' jog speeds\n" );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for CR cut\n" );
@@ -428,6 +478,16 @@ subs() {
 			 ( theCut < 0.0 ? "" : "-" ), theCut, passes );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+	fprintf( fout, "'\n\tRETURN'\n'\n" );
+	fprintf( fout, "'\n'\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
+	fprintf( fout, "'-- Use low level moves to remove material                      ---\n" );
+	fprintf( fout, "'------------------------------------------------------------------\n" );
+// sub2 needs to cut multiple passes are different cut depths...
+	fprintf( fout, "'\nsub2:'\n" );
+	fprintf( fout, "JZ,0.950000							' raise tool\n" );
+	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+	fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
 	fprintf( fout, "'\n\tRETURN'\n'\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
@@ -522,12 +582,21 @@ validate() {
 		rc = fail( rc, "No tool cut depth verification due to diameter parameter problems" );
 	}
 
-	if( diaOK == 1 ) {
+	if( diaOK == 1 ) { // avoid double error messages on one factor
 		if( diameter >= jointLen ) {
 			rc = fail( rc, "The tool diameter specified is too large for the joint" );
 		}
 	} else {
 		rc = fail( rc, "No tool diameter depth, joint segment length  verification due to diameter parameter problems" );
+	}
+
+	if( diaOK == 1 ) { // avoid double error messages on one factor
+		if( cutWidth == 0.0 ) {		// usr did not specify a cutWidth
+			cutWidth = diameter * MAX_CUT_WIDTH;	//  assign one
+		} else if( cutWidth >= MAX_CUT_WIDTH ) {	// usr did not specify a cutWidth
+			rc = fail( rc, "Tool cut width is excessive!" );
+		}
+		
 	}
 
 	if( wlen == 0.0 ) {
@@ -561,7 +630,18 @@ validate() {
 		rc = fail( rc, "Negative number for work piece thickness are not possible" );
 	} 
 	
-
+	switch( method ) {
+		default :	// unknown cut method
+			rc = fail( rc, "Work piece thickness need to be specified, use -t option" );
+			break;
+		case METHOD_ONE :
+			break;
+		case METHOD_TWO :
+			if( cutWidth >= diameter ) {
+				rc = fail( rc, "Cut width (-w) must be less than the tool diameter (-d)"" );
+			}
+			break;
+	}
 
 	return rc;
 }
