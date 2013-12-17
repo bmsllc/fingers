@@ -59,8 +59,9 @@
 #define	MAX_EDGE_LENGTH		30.0
 #define MAX_DEPTH_RATIO		5.0
 #define MAX_CUT_WIDTH		0.50	// as a percentage
+#define MAX_SUB_BUFFER		60000	// subroutine space
 		
-#defime	METHOD_ONE				1
+#define	METHOD_ONE				1
 #define	METHOD_TWO				2
 
 void dummy( void  );
@@ -73,6 +74,8 @@ void toolPath( char * , int  );
 int validate( void );
 void cut( int, int );
 void subs( void );
+void copySubs( void );
+void errorExit( int e  );
 float evenCuts( float * cutD, float ratio );
 
 typedef struct	{
@@ -85,10 +88,13 @@ Tool	tools[] = { {".25 End Mill", 0.25 }, {".5 End Mill", .498 } };
 int		toolSelect = 1;
 
 // foutput to stdout unless a filename is given;
-FILE *	fout;
+FILE *	fout = NULL;
+FILE *	fsub = NULL;
 
 int		method = METHOD_ONE;	// default cut method
-char  fn[ PATH_MAX ];			// where to put the ShopBot program
+char	fn[ PATH_MAX ];			// where to put the ShopBot program
+char	fname[ PATH_MAX ];
+char	subfname[ PATH_MAX ];
 int		fnSet = 0;				// monitors filename
 char  * name = NULL;			// name provided by the user
 int		side = SIDE_UNKNOWN;	// which side of the joint we are programming for
@@ -117,6 +123,10 @@ float top = 0.0;
 float high = 0.0;
 float bot = 0.0;
 float low = 0.0;
+
+char *  subBuffer = NULL;		// holds subroutine code lines
+size_t	subSize = 0;			// maximum subroutine size allowed
+size_t	subUsed = 0;			// maximum subroutine size used
 
 char * pgm = NULL;
 
@@ -225,7 +235,6 @@ main( int argc, char * argv[] )
 			exit( -2 );
 	}
 
-
 	switch( side ) {
 		default :
 		  	fprintf( stderr, "Side selection mix-up, quitting.\n", fn );
@@ -309,7 +318,6 @@ summary( char * n, char * filename ) {
 void
 generate( int si ) {
 	int	x = 0;
-	char	fname[ PATH_MAX ];
 
 	strcpy( fname, fn );
 	if( si == SIDE_A )
@@ -338,8 +346,13 @@ generate( int si ) {
 		cut( si, x );					// generate a joint subroutine.
 	}
 	footer();
+	if( fsub != NULL ) {
+		copySubs();
+	}
 
-	fclose( fout );
+	if( fout != NULL ) {
+		fclose( fout );
+	}
 
 }
 
@@ -428,6 +441,8 @@ footer() {
 	fprintf( fout, "C#,91					'Run file explaining unit error\n" );
 	fprintf( fout, "END\n" );
 	subs();
+	if( subUsed > 0 ) {
+	}
 }
 
 // evenCut - compute cut passes and cutDepth per pass
@@ -492,6 +507,55 @@ subs() {
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 
+}
+
+// append subroutines into the output file
+void
+copySubs() {
+
+	subBuffer = malloc( MAX_SUB_BUFFER );
+	if( subBuffer == NULL ) {
+		 fprintf( stderr, "No memory for the subroutine buffer.\n" );
+		exit( -3 );
+	} else
+		subSize = MAX_SUB_BUFFER;
+
+	strcpy( subfname, fn );
+	strcat( fname, ".sub" );
+
+	// open output file
+	fsub = fopen( subfname, "w" );
+	if( fsub == NULL ) {
+		fprintf( stderr, "Could not open subroutine file: %s\n", subfname );
+		exit( -1 );
+	}
+
+	int rc = fseek( fsub, 0L, SEEK_SET );
+	if( rc != 0 ) {
+		fprintf( stderr, "Could not reposition subroutine file position....\nAborting!" );
+		errorExit( 3 );
+	}
+	subUsed = fread( subBuffer, 1, subSize, fsub );
+	if( rc != 0 ) {
+		size_t fcnt = fwrite( subBuffer, 1, subUsed, fout );
+		if( fcnt != subUsed ) {
+			fprintf( stderr, "Could not copy subroutine file ....\nAborting!" );
+			errorExit( 4 );
+		}
+	}
+	fclose( fsub );
+	free( subBuffer );
+}
+
+// error Exit - we're here because of an error. don't leave any bad files....
+void
+errorExit( int e ) {
+	if( fout != NULL ) {
+		fclose(fout );
+	}
+	if( fsub != NULL ) {
+		fclose(fsub );
+	}
 }
 
 void
@@ -596,6 +660,9 @@ validate() {
 		} else if( cutWidth >= MAX_CUT_WIDTH ) {	// usr did not specify a cutWidth
 			rc = fail( rc, "Tool cut width is excessive!" );
 		}
+		if( cutWidth >= diameter ) {
+			rc = fail( rc, "Cut width (-w) must be less than the tool diameter (-d)" );
+		}
 		
 	}
 
@@ -637,9 +704,6 @@ validate() {
 		case METHOD_ONE :
 			break;
 		case METHOD_TWO :
-			if( cutWidth >= diameter ) {
-				rc = fail( rc, "Cut width (-w) must be less than the tool diameter (-d)"" );
-			}
 			break;
 	}
 
