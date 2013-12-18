@@ -64,6 +64,9 @@
 #define	METHOD_ONE				1
 #define	METHOD_TWO				2
 
+#define	FALSE					0
+#define	TRUE					1
+
 void dummy( void  );
 void usage( void );
 void summary( char *, char * );
@@ -319,7 +322,7 @@ void
 generate( int si ) {
 	int	x = 0;
 
-	strcpy( fname, fn );
+	strcpy( fname, fn );				// setup SBP file
 	if( si == SIDE_A )
 		strcat( fname, "_A.sbp" );
 	else
@@ -330,6 +333,18 @@ generate( int si ) {
 	if( fout == NULL ) {
 		fprintf( stderr, "Could not open %s\n", fn );
 		exit( -1 );
+	}
+
+	if( method == METHOD_TWO ) {
+		strcpy( subfname, fn );			// setup subroutine two file
+		strcat( subfname, ".sub" );
+		// open output file
+		
+		fsub = fopen( subfname, "wr" );
+		if( fsub == NULL ) {
+			fprintf( stderr, "Could not open subroutine file %s\n", subfname );
+			exit( -1 );
+		}
 	}
 
 	summary( name , fname);
@@ -357,15 +372,21 @@ generate( int si ) {
 }
 
 // cut - cut out segments.... (profiles)
+// cut is called once per segment.
 //
-// using the built-in CR command.
+// METHOD_ONE uses the built-in CR command.
 //
 // CR may not be ideal for this process. The design of the jig suggests that a right to left
 // motion when cutting would be better than a left to right motion. A second cutting method may be 
 // provided for in the future.
+//
+// METHOD_TWO uses custom program to hog out the segment.
+//
 
 void
 cut( int sideSelect, int id ) {
+	static int didSub2 = FALSE;
+
 	int	segment = id - 1;					// computers count from zero...
 
 	if( (sideSelect == SIDE_A) && !(id & 1) ) {
@@ -386,18 +407,48 @@ cut( int sideSelect, int id ) {
 	high = top - diameter;					// end of work area after top cut
 	bot = (float) segment * jointLen;
 	low = bot + cutWidth;					// start of work area after bot cut
-// assumes that cutWidth < diameter
 
-// sub1 setup
-	fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
-	fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
-	fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
-	fprintf( fout, "&top = %.3f		' top of work area\n",  top);	// 
-	fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
-	fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
-	fprintf( fout, "\tGOSUB	sub1	' cut work piece\n" );
+	switch( method ) {
+		default:
+					break;
+	case METHOD_ONE	 : 		// sub1 setup
+		fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
+		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
+		fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
+		fprintf( fout, "&top = %.3f		' top of work area\n",  top);	// 
+		fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
+		fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
+		fprintf( fout, "\tGOSUB	sub1	' cut work piece\n" );
 
-	fprintf( fout, "'----------------------------------------------------------------\n" );
+		fprintf( fout, "'----------------------------------------------------------------\n" );
+		break;
+
+	case METHOD_TWO : 						// sub2 needs to cut multiple passes at different cut depths...
+		// create setup and code to call custom sub2 routine to hog out segment
+		fprintf( fout, "'\nsub2:'\n" );
+		fprintf( fout, "JZ,0.950000							' raise tool\n" );
+		fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+		fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
+		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
+		fprintf( fout, "' -- setup next pass -- \n" );
+		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
+		fprintf( fout, "' -- setup next pass -- \n" );
+		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
+		fprintf( fout, "'------------------------------------------------------------------\n" );
+		fprintf( fout, "'------------------------------------------------------------------\n" );
+		if( didSub2 == FALSE ) {
+			didSub2 = TRUE;					// only done once....
+			// open sub2 file....
+			// create custom routine to hog out segment
+			fprintf( fsub, "'\nsub2:'\n" );
+			fprintf( fsub, "JZ,0.950000							' raise tool\n" );
+			fprintf( fsub, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+			fprintf( fsub, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
+			fprintf( fsub, "'\n\tRETURN'\n'\n" );
+			fprintf( fsub, "'------------------------------------------------------------------\n" );
+		}
+		break;
+	}
 }
 
 // header - add machine setup to output file.
@@ -484,6 +535,7 @@ subs() {
 	fprintf( fout, "'&lenY = length of y edge\n" );	// 
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'-- Use the built-in Cut Rectangle to remove material           ---\n" );
+	fprintf( fout, "'-- Parameters are pre-set before calling sub1.                 ---\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
@@ -498,12 +550,7 @@ subs() {
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'-- Use low level moves to remove material                      ---\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
-// sub2 needs to cut multiple passes are different cut depths...
-	fprintf( fout, "'\nsub2:'\n" );
-	fprintf( fout, "JZ,0.950000							' raise tool\n" );
-	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
-	fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
-	fprintf( fout, "'\n\tRETURN'\n'\n" );
+
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 
