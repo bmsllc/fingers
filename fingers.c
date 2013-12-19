@@ -407,6 +407,8 @@ cut( int sideSelect, int id ) {
 	high = top - diameter;					// end of work area after top cut
 	bot = (float) segment * jointLen;
 	low = bot + cutWidth;					// start of work area after bot cut
+	float toolHeight = 0.0;
+
 
 	switch( method ) {
 		default:
@@ -425,6 +427,14 @@ cut( int sideSelect, int id ) {
 
 	case METHOD_TWO : 						// sub2 needs to cut multiple passes at different cut depths...
 		// create setup and code to call custom sub2 routine to hog out segment
+		fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
+		fprintf( fout, "&top = %.3f		' top of segment area\n",  top);	// 
+		fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
+		fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
+		fprintf( fout, "&startX = %.3f	' right edge \n", baseX + thickness + step );
+		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
+
+
 		fprintf( fout, "'\nsub2:'\n" );
 		fprintf( fout, "JZ,0.950000							' raise tool\n" );
 		fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
@@ -441,9 +451,11 @@ cut( int sideSelect, int id ) {
 			// open sub2 file....
 			// create custom routine to hog out segment
 			fprintf( fsub, "'\nsub2:'\n" );
-			fprintf( fsub, "JZ,0.950000							' raise tool\n" );
-			fprintf( fsub, "J2,0.000000,0.000000				' home tool at start of cut\n" );
-			fprintf( fsub, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
+			fprintf( fsub, "JZ,1.000							' raise tool\n" );
+			fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+			fprintf( fsub, "J3,&startX,&startY,1.000			' position tool for cut\n" );
+			fprintf( fsub, "'---------- cutting starts here                         -----------\n" );
+			fprintf( fsub, "MZ,%.3f							' drop tool to cut height\n", toolHeight );
 			fprintf( fsub, "'\n\tRETURN'\n'\n" );
 			fprintf( fsub, "'------------------------------------------------------------------\n" );
 		}
