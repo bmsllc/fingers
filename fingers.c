@@ -414,6 +414,8 @@ cut( int sideSelect, int id ) {
 		default:
 					break;
 	case METHOD_ONE	 : 		// sub1 setup
+		// In this method the position only has to be established once, at the beginning since
+		// the built-in CR command knows how to cut the rectangle.
 		fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
 		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 		fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
@@ -426,16 +428,20 @@ cut( int sideSelect, int id ) {
 		break;
 
 	case METHOD_TWO : 						// sub2 needs to cut multiple passes at different cut depths...
-		// create setup and code to call custom sub2 routine to hog out segment
+		// In this method the position has to be established before each cut.
+		// create setup and code to call custom sub2 routine to hog out one segment
+		// these ShopBot variables will vary per segment
 		fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
 		fprintf( fout, "&top = %.3f		' top of segment area\n",  top);	// 
+		fprintf( fout, "&cbot = %.3f	' bottom of center area\n",  bot + diameter );	// 
+		fprintf( fout, "&ctop = %.3f	' top of center area\n",  top - diameter );	// 
 		fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
 		fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
 		fprintf( fout, "&startX = %.3f	' right edge \n", baseX + thickness + step );
 		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 
 
-		fprintf( fout, "'\nsub2:'\n" );
+		fprintf( fout, "SA									' absolute addressing\n" );
 		fprintf( fout, "JZ,0.950000							' raise tool\n" );
 		fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 		fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
@@ -447,15 +453,26 @@ cut( int sideSelect, int id ) {
 		fprintf( fout, "'------------------------------------------------------------------\n" );
 		fprintf( fout, "'------------------------------------------------------------------\n" );
 		if( didSub2 == FALSE ) {
-			didSub2 = TRUE;					// only done once....
+			didSub2 = TRUE;					// only done once per run....
 			// open sub2 file....
 			// create custom routine to hog out segment
+			//   Absolute cut bot and top to mark segment
+			//   Relative cut to remove center area
 			fprintf( fsub, "'\nsub2:'\n" );
+			fprintf( fout, "SA									' absolute addressing\n" );
 			fprintf( fsub, "JZ,1.000							' raise tool\n" );
 			fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 			fprintf( fsub, "J3,&startX,&startY,1.000			' position tool for cut\n" );
 			fprintf( fsub, "'---------- cutting starts here                         -----------\n" );
-			fprintf( fsub, "MZ,%.3f							' drop tool to cut height\n", toolHeight );
+			fprintf( fsub, "MZ,%.3f								' drop tool to cut height\n", toolHeight );
+			fprintf( fsub, "M3,%.3f,%.3f						' first cut\n", toolHeight );
+			// lift tool
+			// position tool for 2nd cut
+			fprintf( fsub, "MZ,%.3f								' drop tool to cut height\n", toolHeight );
+			fprintf( fsub, "M3,%.3f,%.3f						' first cut\n", toolHeight );
+			// lift tool
+			// position tool for a RELATIVE cut
+			fprintf( fout, "SR									' relative addressing\n" );
 			fprintf( fsub, "'\n\tRETURN'\n'\n" );
 			fprintf( fsub, "'------------------------------------------------------------------\n" );
 		}
@@ -483,6 +500,7 @@ header( char * t ) {
 	fprintf( fout, "IF %(25)=1 THEN GOTO UNIT_ERROR	'check to see software is set to standard\n" );
 	fprintf( fout, "C#,90				 	'Lookup offset values\n" );
 	fprintf( fout, "'\n" );
+	fprintf( fout, "SA								' absolute addressing\n" );
 	fprintf( fout, "TR,12000,1\n" );
 	fprintf( fout, "MS,%.3f,%.3f					' move speed: cut,plunge\n", moveSpeed, plungeSpeed );
 	fprintf( fout, "JS,%.3f,%.3f					' jog speeds\n", jogSpeed, jogPlungeSpeed );
@@ -550,6 +568,7 @@ subs() {
 	fprintf( fout, "'-- Parameters are pre-set before calling sub1.                 ---\n" );
 	fprintf( fout, "'------------------------------------------------------------------\n" );
 	fprintf( fout, "'\nsub1:'\n" );
+	fprintf( fout, "SA									' absolute addressing\n" );
 	fprintf( fout, "JZ,0.950000							' raise tool\n" );
 	fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 	fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for CR cut\n" );
