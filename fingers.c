@@ -49,10 +49,12 @@
 
 #define	TITLE_MAX 		50
 
-#define	SIDE_A			0
-#define	SIDE_B			1
+#define	SIDE_UNKNOWN	0
+#define	SIDE_A			1
+#define	SIDE_B			2
 #define	SIDE_BOTH		3
-#define	SIDE_UNKNOWN	-1
+
+char *	sides[] = { "Unknown", "Side A", "Side B", "Both sides" };
 
 #define	MAX_TOOL_DIAMETER	0.50
 #define	MAX_JOINT_LENGTH	30.0
@@ -61,6 +63,7 @@
 #define MAX_CUT_WIDTH		0.50	// as a percentage
 #define MAX_SUB_BUFFER		60000	// subroutine space
 		
+#define	METHOD_ZERO				0
 #define	METHOD_ONE				1
 #define	METHOD_TWO				2
 
@@ -76,25 +79,30 @@ void footer( void );
 void toolPath( char * , int  );
 int validate( void );
 void cut( int, int );
-void subs( void );
-void copySubs( void );
+void sub1( void );
+void sub2( void );
 void errorExit( int e  );
 float evenCuts( float * cutD, float ratio );
 
+#if 0
 typedef struct	{
 	char * name;
 	float	dia;
 } Tool ;
+#endif
 
 
+#if 0
 Tool	tools[] = { {".25 End Mill", 0.25 }, {".5 End Mill", .498 } };
 int		toolSelect = 1;
+#endif
 
 // foutput to stdout unless a filename is given;
 FILE *	fout = NULL;
 FILE *	fsub = NULL;
 
-int		method = METHOD_ONE;	// default cut method
+int		method = METHOD_ZERO;	// no default cut method
+int		didSub2 = FALSE;		// one sub2 per file
 char	fn[ PATH_MAX ];			// where to put the ShopBot program
 char	fname[ PATH_MAX ];
 char	subfname[ PATH_MAX ];
@@ -148,7 +156,6 @@ main( int argc, char * argv[] )
 	while((ch = getopt(argc,argv, OPTION_STRING )) != -1) {
 		switch( ch ) {
       default:	//  '?' usually
-        //fprintf(stderr, "%s: invalid option -%c\n\n", pgm, ch);
 		opterr = 1;
         usage();
         exit(1);
@@ -244,13 +251,17 @@ main( int argc, char * argv[] )
 			break;
 
 		case SIDE_BOTH:
+			didSub2 = FALSE;		// one sub2 per file
 			generate( SIDE_A );
+			didSub2 = FALSE;		// one sub2 per file
 			generate( SIDE_B );
 			break;
 		case SIDE_A:
+			didSub2 = FALSE;		// one sub2 per file
 			generate( SIDE_A );
 			break;
 		case SIDE_B:
+			didSub2 = FALSE;		// one sub2 per file
 			generate( SIDE_B );
 			break;
 	}
@@ -274,6 +285,7 @@ usage() {
 	fprintf( stderr, "\t%s - %s\n", "d","Tool diameter.");
 	fprintf( stderr, "\t%s - %s\n", "j","Number of joint segments.");
 	fprintf( stderr, "\t%s - %s\n", "l","Edge length." );
+	fprintf( stderr, "\t%s - %s\n", "m","Cut method 1 or  2. Method one is the default." );
 	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
 	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
 	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A, B, or C. Default is both (C)." );
@@ -340,9 +352,10 @@ generate( int si ) {
 		strcat( subfname, ".sub" );
 		// open output file
 		
-		fsub = fopen( subfname, "wr" );
+		fsub = fopen( subfname, "w+" );
 		if( fsub == NULL ) {
 			fprintf( stderr, "Could not open subroutine file %s\n", subfname );
+			perror( subfname );
 			exit( -1 );
 		}
 	}
@@ -360,13 +373,14 @@ generate( int si ) {
 	for( x=1; x <= joints; x++ ) {		// for all joints
 		cut( si, x );					// generate a joint subroutine.
 	}
+
 	footer();
-	if( fsub != NULL ) {
-		copySubs();
-	}
 
 	if( fout != NULL ) {
 		fclose( fout );
+	}
+	if( fsub != NULL ) {
+		fclose( fsub );
 	}
 
 }
@@ -385,7 +399,6 @@ generate( int si ) {
 
 void
 cut( int sideSelect, int id ) {
-	static int didSub2 = FALSE;
 
 	int	segment = id - 1;					// computers count from zero...
 
@@ -395,8 +408,6 @@ cut( int sideSelect, int id ) {
 		return;
 	}
 
-	//toolPath( tools[ toolSelect ].name, id );			// probably needs to change....
-														// to construct actual parameters for tool
 	// compute parameters and add a subroutine call to cut out the slot
 	// put parameters into ShopBot variables
 
@@ -412,10 +423,16 @@ cut( int sideSelect, int id ) {
 
 	switch( method ) {
 		default:
-					break;
+			fprintf( stderr, "Invalid method (%d) use in cut\n", method  );
+			exit( 1 );
+			break;
+
 	case METHOD_ONE	 : 		// sub1 setup
 		// In this method the position only has to be established once, at the beginning since
 		// the built-in CR command knows how to cut the rectangle.
+		fprintf( fout, "'----------------------------------------------------------------\n" );
+		fprintf( fout, "'------------- %s - segment %d ---------------------------\n", sides[ sideSelect ], segment );
+		fprintf( fout, "'----------------------------------------------------------------\n" );
 		fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
 		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 		fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
@@ -437,6 +454,7 @@ cut( int sideSelect, int id ) {
 		fprintf( fout, "&ctop = %.3f	' top of center area\n",  top - diameter );	// 
 		fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
 		fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
+
 		fprintf( fout, "&startX = %.3f	' right edge \n", baseX + thickness + step );
 		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
 
@@ -444,6 +462,8 @@ cut( int sideSelect, int id ) {
 		fprintf( fout, "SA									' absolute addressing\n" );
 		fprintf( fout, "JZ,0.950000							' raise tool\n" );
 		fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
+
+		// compute number of times sub2 will be called per segment
 		fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
 		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
 		fprintf( fout, "' -- setup next pass -- \n" );
@@ -451,15 +471,18 @@ cut( int sideSelect, int id ) {
 		fprintf( fout, "' -- setup next pass -- \n" );
 		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
 		fprintf( fout, "'------------------------------------------------------------------\n" );
+
 		fprintf( fout, "'------------------------------------------------------------------\n" );
 		if( didSub2 == FALSE ) {
-			didSub2 = TRUE;					// only done once per run....
+			didSub2 = TRUE;					// only done once per file....
 			// open sub2 file....
 			// create custom routine to hog out segment
 			//   Absolute cut bot and top to mark segment
 			//   Relative cut to remove center area
+			fprintf( fsub, "'\n'\n" );
+			fprintf( fsub, "'------------------------ subroutines -----------------------------\n" );
 			fprintf( fsub, "'\nsub2:'\n" );
-			fprintf( fout, "SA									' absolute addressing\n" );
+			fprintf( fsub, "SA									' absolute addressing\n" );
 			fprintf( fsub, "JZ,1.000							' raise tool\n" );
 			fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 			fprintf( fsub, "J3,&startX,&startY,1.000			' position tool for cut\n" );
@@ -472,9 +495,10 @@ cut( int sideSelect, int id ) {
 			fprintf( fsub, "M3,%.3f,%.3f						' first cut\n", toolHeight );
 			// lift tool
 			// position tool for a RELATIVE cut
-			fprintf( fout, "SR									' relative addressing\n" );
+			fprintf( fsub, "SR									' relative addressing\n" );
 			fprintf( fsub, "'\n\tRETURN'\n'\n" );
 			fprintf( fsub, "'------------------------------------------------------------------\n" );
+			fflush( fsub );
 		}
 		break;
 	}
@@ -521,12 +545,27 @@ footer() {
 	fprintf( fout, "SO,1,0\n" );
 	fprintf( fout, "C#,91					'Run file explaining unit error\n" );
 	fprintf( fout, "END\n" );
-	subs();
-	if( subUsed > 0 ) {
+	switch( method ) {
+		default :	// error
+			fprintf( stderr, "Invalid method (%d) in footer\n", method );
+			exit(1);
+			break;
+		case METHOD_ONE :
+			sub1();									// sub1 one is an easy CR cut
+			break;
+		case METHOD_TWO :
+			sub2();
+			break;
 	}
 }
 
 // evenCut - compute cut passes and cutDepth per pass
+// inputs: 
+//			cutD - pointer to best cut depth.
+//			step - number of cut passes to be used.
+// outputs:
+//			cutD - best cut depth per pass.
+//			passes to be used.
 //
 
 float
@@ -540,7 +579,7 @@ evenCuts( float * cutD, float step ) {
 }
 
 //
-// subs - create subroutine to perform the actual cutting.
+// sub1 - create subroutine to perform the actual cutting via the built-in CR command.
 // for best accuracy the cut should move from right to left through the work piece. (jig specific ?)
 // However, the easy way to do this is via the "cut rectangle" which does not allow for that control.
 //
@@ -548,7 +587,7 @@ evenCuts( float * cutD, float step ) {
 //		Using CR (cut rectangle) and preset variables.
 //		.25 is a deep cut...
 void
-subs() {
+sub1() {
 
 	float	theCut = thickness;
 	float	passes = evenCuts( &theCut, (diameter / MAX_DEPTH_RATIO) );
@@ -587,9 +626,9 @@ subs() {
 
 }
 
-// append subroutines into the output file
+// append subroutine sub2 into the output file
 void
-copySubs() {
+sub2() {
 
 	subBuffer = malloc( MAX_SUB_BUFFER );
 	if( subBuffer == NULL ) {
@@ -598,30 +637,32 @@ copySubs() {
 	} else
 		subSize = MAX_SUB_BUFFER;
 
+#if 0
 	strcpy( subfname, fn );
 	strcat( fname, ".sub" );
-
-	// open output file
+	// open input file
 	fsub = fopen( subfname, "w" );
 	if( fsub == NULL ) {
 		fprintf( stderr, "Could not open subroutine file: %s\n", subfname );
 		exit( -1 );
 	}
+#endif
 
-	int rc = fseek( fsub, 0L, SEEK_SET );
-	if( rc != 0 ) {
+	long rc = ftell( fsub );
+	rc = fseek( fsub, 0L, SEEK_SET );
+	if( rc != 0L ) {
 		fprintf( stderr, "Could not reposition subroutine file position....\nAborting!" );
 		errorExit( 3 );
 	}
+
 	subUsed = fread( subBuffer, 1, subSize, fsub );
-	if( rc != 0 ) {
+	if( subUsed != 0 ) {
 		size_t fcnt = fwrite( subBuffer, 1, subUsed, fout );
 		if( fcnt != subUsed ) {
 			fprintf( stderr, "Could not copy subroutine file ....\nAborting!" );
 			errorExit( 4 );
 		}
 	}
-	fclose( fsub );
 	free( subBuffer );
 }
 
@@ -636,6 +677,7 @@ errorExit( int e ) {
 	}
 }
 
+#if 0
 void
 toolPath( char * tool, int id ) {
 
@@ -644,6 +686,7 @@ toolPath( char * tool, int id ) {
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 
 }
+#endif
 
 //
 // output a error message.
@@ -695,6 +738,10 @@ validate() {
 		case SIDE_B :
 		case SIDE_BOTH :
 			break;
+	}
+
+	if( method == 0 ) {
+		rc = fail( rc, "No cut method specified, use -m option" );
 	}
 
 	if( diameter == 0.0 ) {
