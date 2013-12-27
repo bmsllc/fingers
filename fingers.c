@@ -401,6 +401,9 @@ void
 cut( int sideSelect, int id ) {
 
 	int	segment = id - 1;					// computers count from zero...
+	float	theCut = thickness;
+	float	passes = evenCuts( &theCut, (diameter / MAX_DEPTH_RATIO) );
+	float	depth = 0.0;				// starting depth
 
 	if( (sideSelect == SIDE_A) && !(id & 1) ) {
 		return;
@@ -435,6 +438,7 @@ cut( int sideSelect, int id ) {
 		fprintf( fout, "'----------------------------------------------------------------\n" );
 		fprintf( fout, "&startX = %.3f	' left edge X\n", baseX - step );
 		fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
+		fprintf( fout, "&safeHeight = %.3f	' left edge Y\n",  1.0 );	// 
 		fprintf( fout, "&bot = %.3f		' bottom of work area\n",  bot);	// 
 		fprintf( fout, "&top = %.3f		' top of work area\n",  top);	// 
 		fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
@@ -445,6 +449,7 @@ cut( int sideSelect, int id ) {
 		break;
 
 	case METHOD_TWO : 						// sub2 needs to cut multiple passes at different cut depths...
+
 		// In this method the position has to be established before each cut.
 		// create setup and code to call custom sub2 routine to hog out one segment
 		// these ShopBot variables will vary per segment
@@ -460,16 +465,18 @@ cut( int sideSelect, int id ) {
 
 
 		fprintf( fout, "SA									' absolute addressing\n" );
-		fprintf( fout, "JZ,0.950000							' raise tool\n" );
+		fprintf( fout, "JZ,&safeHeight						' raise tool\n" );
 		fprintf( fout, "J2,0.000000,0.000000				' home tool at start of cut\n" );
 
 		// compute number of times sub2 will be called per segment
-		fprintf( fout, "J3,&startX,&startY,0.000000			' position tool for cut\n" );
-		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
-		fprintf( fout, "' -- setup next pass -- \n" );
-		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
-		fprintf( fout, "' -- setup next pass -- \n" );
-		fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
+		for( depth = 0.0; depth <= thickness; depth += theCut) {
+			if( depth > thickness )
+				depth = thickness;
+			fprintf( fout, "&depth = %.3f	' set cutting depth \n", depth );
+			fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
+		}
+		//fprintf( fout, "' -- setup next pass -- \n" );
+		//fprintf( fout, "\tGOSUB	sub2						' cut work piece\n" );
 		fprintf( fout, "'------------------------------------------------------------------\n" );
 
 		fprintf( fout, "'------------------------------------------------------------------\n" );
@@ -481,17 +488,21 @@ cut( int sideSelect, int id ) {
 			//   Relative cut to remove center area
 			fprintf( fsub, "'\n'\n" );
 			fprintf( fsub, "'------------------------ subroutines -----------------------------\n" );
+			fprintf( fsub, "'--- cut bottom of segment                                      ---\n" );
+			fprintf( fsub, "'--- cut top of segment                                         ---\n" );
+			fprintf( fsub, "'--- widen top to bottom                                        ---\n" );
+			fprintf( fsub, "'------------------------------------------------------------------\n" );
 			fprintf( fsub, "'\nsub2:'\n" );
 			fprintf( fsub, "SA									' absolute addressing\n" );
-			fprintf( fsub, "JZ,1.000							' raise tool\n" );
+			fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 			fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-			fprintf( fsub, "J3,&startX,&startY,1.000			' position tool for cut\n" );
+			fprintf( fsub, "J3,&startX,&startY,&safeHeight		' position tool for cut\n" );
 			fprintf( fsub, "'---------- cutting starts here                         -----------\n" );
-			fprintf( fsub, "MZ,%.3f								' drop tool to cut height\n", toolHeight );
-			fprintf( fsub, "M3,%.3f,%.3f						' first cut\n", toolHeight );
+			fprintf( fsub, "MZ,-&depth							' drop tool to cut height\n" );
+			fprintf( fsub, "M3,%.3f,&depth						' first cut\n", toolHeight );
 			// lift tool
 			// position tool for 2nd cut
-			fprintf( fsub, "MZ,%.3f								' drop tool to cut height\n", toolHeight );
+			fprintf( fsub, "MZ,-&depth							' drop tool to cut height\n" );
 			fprintf( fsub, "M3,%.3f,%.3f						' first cut\n", toolHeight );
 			// lift tool
 			// position tool for a RELATIVE cut
