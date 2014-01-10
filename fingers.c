@@ -1,4 +1,3 @@
-
 //
 // fingers - shopbot program generator for cutting finger joints
 // aka comb joint, box-pin or box joint
@@ -434,6 +433,10 @@ cut( int sideSelect, int id ) {
 	low = bot + diameter;					// start of work area after bot cut
 	float toolHeight = 0.0;
 
+	float	startLine = baseY + halfDiameter;			// Y1
+	float	topLine = baseY + jointLen - halfDiameter;	// Y2
+	float	finishLine = baseY + diameter;				// Y3
+
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'--------------- %s - segment %d -----------------------------\n", sides[ sideSelect ], segment );
@@ -442,7 +445,10 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "&startX = %.3f	' horizontal right edge X\n", baseX + thickness + halfDiameter );
 	fprintf( fout, "&endX = %.3f	' horizontal left edge X\n", baseX - halfDiameter );
 	fprintf( fout, "&lowY = %.3f	' vertical bottom edge Y\n", baseY + diameter );
-	fprintf( fout, "&hiY = %.3f		' vertical top edge Y\n", baseY + jointLen - halfDiameter );
+	fprintf( fout, "&hiY = %.3f		' vertical top edge Y\n", baseY + jointLen - diameter );
+	fprintf( fout, "&startY = %.3f	' vertical Y\n", baseY + halfDiameter );
+	fprintf( fout, "&endY = %.3f	' vertical Y\n", baseY + jointLen - halfDiameter );
+	fprintf( fsub, "&finishLine = %.3f\n", startLine + diameter );
 	fprintf( fout, "&safeHeight = %.3f	' left edge Y\n\n",  1.0 );	// 
 
 	fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
@@ -479,14 +485,12 @@ cut( int sideSelect, int id ) {
 			fprintf( fout, "&lenX = %.3f	' length of x edge\n", thickness + (diameter * 2.0 ) );	// 
 			fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
 
-			fprintf( fout, "&startX = %.3f	' right edge \n", baseX + thickness + step );
-			fprintf( fout, "&startY = %.3f	' left edge Y\n", baseY + step );	// 
-
 
 			// compute number of times sub2 will be called per segment
 			for( depth = 0.0; depth <= thickness; depth += theCut) {
 				if( depth > thickness )
 					depth = thickness;
+				fprintf( fout, "&depth = %.3f	' set cutting depth \n", depth );
 				fprintf( fout, "&depth = %.3f	' set cutting depth \n", depth );
 				fprintf( fout, "\tGOSUB	sub2	' cut segment at depth %.3f\n", depth );
 			}
@@ -506,37 +510,51 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'--- cut bottom of segment                                      ---\n" );
 				fprintf( fsub, "'--- cut top of segment                                         ---\n" );
 				fprintf( fsub, "'--- widen cut top to bottom                                    ---\n" );
+				fprintf( fsub, "'--  requires startX, endX, startY, endY     			        --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'\nsub2:'\n" );
 				fprintf( fsub, "SA									' absolute addressing\n" );
+				fprintf( fsub, "&startingX = &startX				' setup abs addresses\n" );
+				fprintf( fsub, "&endingX = &endX\n" );
+				fprintf( fsub, "&startingY = %.3f\n", startLine );
+				fprintf( fsub, "&endingY = &startingY\n" );
+				fprintf( fsub, "&finishLine = %.3f					' end of cutting\n", finishLine);
+
+				fprintf( fsub, "'---------- cutting starts here                         -----------\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-				fprintf( fsub, "J3,&startX,&startY,&safeHeight		' position tool for cut\n" );
-				fprintf( fsub, "'---------- cutting starts here                         -----------\n" );
+				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
+				fprintf( fsub, "&startingY = %.3f\n", topLine );
+				fprintf( fsub, "&endingY = &startingY\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make the cut \n\n" );
+				float	y;
+				for( y=topLine - step; y > finishLine; y -= step ) {
+					fprintf( fsub, "&startingY = %.3f\n", y );
+					fprintf( fsub, "&endingY = &startingY\n" );
+					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n\n" );
+				}
 				fprintf( fsub, "\tRETURN'\n'\n" );
 
 				// sub3 does the real segment cut at a depth determined by sub2.
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'--  single cut right to left                                    --\n" );
+				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub3:'\n" );
-				fprintf( fsub, "&curY = &startY						' setup for relative addressing\n" );
-				fprintf( fsub, "MZ,-&depth							' drop tool to cut height\n" );
-				fprintf( fsub, "M3,&endX,&curY						' first cut\n", toolHeight );
-				fprintf( fsub, "MZ,-&safeHeight						' drop tool to cut height\n" );
-
-				fprintf( fsub, "&curY = &hiY						' setup for relative addressing\n" );
-				fprintf( fsub, "J3,&startX,&curY,&safeHeight		' position tool for cut\n" );
-				fprintf( fsub, "MZ,-&depth							' drop tool to cut height\n" );
-				fprintf( fsub, "M3,&endX,&hiY						' seconde cut\n", toolHeight );
-				fprintf( fsub, "MZ,-&safeHeight						' drop tool to cut height\n" );
-// stop when the cuts overlap at the bottom of the segment
-				fprintf( fsub, "&curY = &curY-&step					' step for next cut\n" );
-				fprintf( fsub, "J3,&startX,&curY,&safeHeight			' position tool for cut\n" );
-				fprintf( fsub, "M3,&endX,&curY						' seconde cut\n", toolHeight );
-
-				fprintf( fsub, "MZ,-&safeHeight						' drop tool to cut height\n" );
+				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
+				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
+				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut right to left\n" );
+				fprintf( fsub, "MZ,-&safeHeight							' drop tool to cut height\n" );
+				fprintf( fsub, "'\n\tRETURN'\n'\n" );
+				fprintf( fsub, "'------------------------------------------------------------------\n" );
+				fprintf( fsub, "'--  single cut left to right                                    --\n" );
+				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
+				fprintf( fsub, "'------------------------------------------------------------------\n" );
+				fprintf( fsub, "\nsub4:'\n" );
+				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
+				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
+				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut left to right\n" );
+				fprintf( fsub, "MZ,-&safeHeight							' drop tool to cut height\n" );
 				fprintf( fsub, "'\n\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fflush( fsub );
@@ -755,7 +773,7 @@ fail( int rc, char * msg ) {
 
 int
 validate() {
-#define	BUFLEN	80
+#define	BUFLEN	100
 	int	rc = 1;
 	char	buf[ BUFLEN ];
 	int		diaOK = 1;
@@ -867,6 +885,7 @@ validate() {
 		rc = fail( rc, "Negative number for work piece thickness are not possible" );
 	} 
 	
+	float	slot = ( (2 * diameter) + (2 * cutWidth));
 	switch( method ) {
 		default :	// unknown cut method
 			rc = fail( rc, "Work piece thickness need to be specified, use -t option" );
@@ -874,6 +893,11 @@ validate() {
 		case METHOD_ONE :
 			break;
 		case METHOD_TWO :
+			if( jointLen < slot  ) {
+				memset( buf, 0, BUFLEN );
+				snprintf( buf, BUFLEN, "The joint length (%.3f < %.3f) is too short based on the cut width(-w) and tool diameter(-d)", jointLen, slot );
+				rc = fail( rc, buf );
+			}
 			break;
 	}
 
