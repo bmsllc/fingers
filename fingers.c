@@ -472,7 +472,7 @@ cut( int sideSelect, int id ) {
 //	}
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
-	fprintf( fout, "'--------------- %s - segment %d -----------------------------\n", sides[ sideSelect ], segment );
+	fprintf( fout, "'----   %s - segment %d  %.3f - %.3f  %.3f \n", sides[ sideSelect ], segment, baseY, top, jointLen );
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "					' define segment work area\n" );
 	fprintf( fout, "&X1 = %.3f\n", X1);
@@ -533,8 +533,7 @@ cut( int sideSelect, int id ) {
 			for( depth = theCut; depth <= thickness; depth += theCut) {
 				if( depth > thickness )
 					depth = thickness;
-				fprintf( fout, "&depth = %.3f	' set cutting depth \n", depth );
-				fprintf( fout, "&depth = %.3f	' set cutting depth \n", depth );
+				fprintf( fout, "&depth = %.3f	' set cutting depth\n", depth );
 				fprintf( fout, "\tGOSUB	sub2	' cut segment at depth %.3f\n", depth );
 			}
 			//fprintf( fout, "' -- setup next pass -- \n" );
@@ -552,20 +551,21 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'------------------------ subroutines -----------------------------\n" );
 				fprintf( fsub, "'--- cut right to left                                          ---\n" );
 				fprintf( fsub, "'--  requires startX, endX, startY, endY     			        --\n" );
+				fprintf( fsub, "'--  sub2 CAN NOT HAVE HARD Y ADDRESSES CODED WITHIN !!    		--\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'\nsub2:'\n" );
 				fprintf( fsub, "SA									' absolute addressing\n" );
-				fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				fprintf( fsub, "&endingX = &X1\n" );
-				fprintf( fsub, "&startingY = %.3f\n", Y1 );
-				fprintf( fsub, "&endingY = %.3f\n", Y1 );
+				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
+				//fprintf( fsub, "&endingX = &X1\n" );
+				fprintf( fsub, "&startingY = &Y1\n" );
+				fprintf( fsub, "&endingY = &Y1\n" );
 
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				fprintf( fsub, "&endingX = &X1\n" );
+				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
+				//fprintf( fsub, "&endingX = &X1\n" );
 				fprintf( fsub, "&startingY = %.3f\n", Y1a );
 				fprintf( fsub, "&endingY = %.3f\n", Y1a );
 
@@ -573,19 +573,19 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				fprintf( fsub, "&endingX = &X1\n" );
-				fprintf( fsub, "&startingY = %.3f\n", Y2 );
-				fprintf( fsub, "&endingY = %.3f\n", Y2 );
+				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
+				//fprintf( fsub, "&endingX = &X1\n" );
+				fprintf( fsub, "&startingY = &Y2\n" );
+				fprintf( fsub, "&endingY = &Y2\n" );
 
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				fprintf( fsub, "&startingX = &X1				' reverse directioncut\n" );
-				fprintf( fsub, "&endingX = &X2\n" );
-				fprintf( fsub, "&startingY = %.3f\n", Y2a );
-				fprintf( fsub, "&endingY = %.3f\n", Y2a );
+				//fprintf( fsub, "&startingX = &X1				' reverse directioncut\n" );
+				//fprintf( fsub, "&endingX = &X2\n" );
+				fprintf( fsub, "&startingY = &Y2A\n" );
+				fprintf( fsub, "&endingY = &Y2A\n" );
 
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
@@ -594,10 +594,11 @@ cut( int sideSelect, int id ) {
 				float	y;
 				fprintf( fsub, "\n'clearing the segment from top to bottom: %.3f, %.3f\n", Y4, Y3 );
 				for( y=Y4; y > Y3; y -= step ) {
-					fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-					fprintf( fsub, "&endingX = &X1\n" );
-					fprintf( fsub, "&startingY = %.3f\n", y );
-					fprintf( fsub, "&endingY = %.3f\n", y );
+					//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
+					//fprintf( fsub, "&endingX = &X1\n" );
+
+					fprintf( fsub, "&startingY = %.3f\n", y );	// PRPBLEM... needs to be different in 
+					fprintf( fsub, "&endingY = %.3f\n", y );	// different segments...
 
 					fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 					fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
