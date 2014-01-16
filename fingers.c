@@ -33,12 +33,13 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?Bc:d:j:l:m:n:o:s:t:vw:"
+#define	OPTION_STRING	"?Bc:d:h:j:l:m:n:o:s:t:vw:"
 
 // command line parameters...
 //  -B put dummy command in clipboard
 //  -c cutDepth
 //  -d tool diameter
+//  -h safe height for tool
 //  -j number of joint segments
 //  -l length of edge
 //	-m cut method
@@ -89,18 +90,6 @@ void sub2( void );
 void errorExit( int e  );
 float evenCuts( float * cutD, float ratio );
 
-#if 0
-typedef struct	{
-	char * name;
-	float	dia;
-} Tool ;
-#endif
-
-
-#if 0
-Tool	tools[] = { {".25 End Mill", 0.25 }, {".5 End Mill", .498 } };
-int		toolSelect = 1;
-#endif
 
 // foutput to stdout unless a filename is given;
 FILE *	fout = NULL;
@@ -117,6 +106,7 @@ int		side = SIDE_UNKNOWN;	// which side of the joint we are programming for
 float	wlen = 0.0;				// the length of the joint
 int		joints = 0;				// how many segments along the joint
 float	thickness = 0.0;		// thickness of the work piece
+float	safeHeight = 0.0;		// tool safe height
 float	diameter = 0.0;			// tool diameter provided by the user
 float	jointLen = 0.0;			// calculated segment length
 float	cutDepth = 0.0;			// max cut depth
@@ -196,6 +186,10 @@ main( int argc, char * argv[] )
 
       case 'd': 						// tool diameter
 		diameter = atof( optarg );
+        break;
+
+      case 'h': 						// tool safe height
+		safeHeight = atof( optarg );
         break;
 
       case 'l': 						// workpiece length
@@ -340,6 +334,7 @@ summary( char * n, char * filename ) {
 	fprintf( fout, "'jointLen \t%.3f\n", jointLen );
 	fprintf( fout, "'tool diameter \t%.3f\n", diameter );
 	fprintf( fout, "'cut width \t%.3f\n", cutWidth );
+	fprintf( fout, "'tool safe height \t%.3f\n", safeHeight );
 	fprintf( fout, "\n'Assumes workpiece is homed with no offset....\n'\n" );
 }
 
@@ -459,6 +454,7 @@ cut( int sideSelect, int id ) {
 	float	topLine = baseY + jointLen - halfDiameter;	// Y2
 	float	finishLine = baseY + diameter;				// Y3
 
+											// setup per joint segment
 	X1  = baseX - halfDiameter;
 	X2  = baseX + thickness + halfDiameter;
 	Y1  = baseY + cutWidth +halfDiameter;
@@ -466,21 +462,22 @@ cut( int sideSelect, int id ) {
 	Y2  = baseY + jointLen - cutWidth - halfDiameter;
 	Y2a = baseY + jointLen - halfDiameter;
 	Y3  = baseY + cutWidth + diameter;
-	Y4  = baseY + jointLen - diameter - cutWidth + cutWidth;
+	Y4  = baseY + jointLen - diameter - cutWidth;	// had at end... + cutWidth;
 
-//	if( finalCheck() ) {
+//	if( finalCheck() ) {					// some final sanity checks...
 //	}
 
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "'----   %s - segment %d  %.3f - %.3f  %.3f \n", sides[ sideSelect ], segment, baseY, top, jointLen );
 	fprintf( fout, "'----------------------------------------------------------------\n" );
 	fprintf( fout, "					' define segment work area\n" );
+	fprintf( fout, "&safeHeight = %.3f	' left edge Y\n\n",  safeHeight );	// 
 	fprintf( fout, "&X1 = %.3f\n", X1);
-	fprintf( fout, "&X2 = %.3f\n", X2);
+	fprintf( fout, "&X2 = %.3f\n\n", X2);
 	fprintf( fout, "&Y1 = %.3f\n", Y1);
-	fprintf( fout, "&Y1a = %.3f\n", Y1a);
+	fprintf( fout, "&Y1a = %.3f\n\n", Y1a);
 	fprintf( fout, "&Y2 = %.3f\n", Y2);
-	fprintf( fout, "&Y2a = %.3f\n", Y2a);
+	fprintf( fout, "&Y2a = %.3f\n\n", Y2a);
 	fprintf( fout, "&Y3 = %.3f\n", Y3);
 	fprintf( fout, "&Y4 = %.3f\n", Y4);
 
@@ -489,9 +486,8 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "&lowY = %.3f		' vertical bottom edge Y\n", baseY + diameter );
 	fprintf( fout, "&hiY = %.3f			' vertical top edge Y\n", baseY + jointLen - diameter );
 	fprintf( fout, "&startY = %.3f		' vertical Y\n", baseY + halfDiameter );
-	fprintf( fout, "&endY = %.3f		' vertical Y\n", baseY + jointLen - halfDiameter );
+	fprintf( fout, "&endY = %.3f		' vertical Y\n\n", baseY + jointLen - halfDiameter );
 	fprintf( fout, "&finishLine = %.3f\n", startLine + diameter );
-	fprintf( fout, "&safeHeight = %.3f	' left edge Y\n\n",  1.0 );	// 
 
 	fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
 	fprintf( fout, "&top = %.3f		' top of segment area\n",  top);	// 
@@ -571,6 +567,7 @@ cut( int sideSelect, int id ) {
 
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+				//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
 				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
@@ -593,16 +590,16 @@ cut( int sideSelect, int id ) {
 
 				float	y;
 				fprintf( fsub, "\n'clearing the segment from top to bottom: %.3f, %.3f\n", Y4, Y3 );
+				fprintf( fsub, "&startingY = &Y4\n" );		// fixing....PRPBLEM... needs to be different in 
 				for( y=Y4; y > Y3; y -= step ) {
-					//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-					//fprintf( fsub, "&endingX = &X1\n" );
 
-					fprintf( fsub, "&startingY = %.3f\n", y );	// PRPBLEM... needs to be different in 
-					fprintf( fsub, "&endingY = %.3f\n", y );	// different segments...
+					//fprintf( fsub, "&startingY = %.3f\n", y );	// PRPBLEM... needs to be different in 
+					fprintf( fsub, "&endingY = &startingY\n" );	// different segments...
 
 					fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 					fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n\n" );
+					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
 				fprintf( fsub, "\tRETURN'\n'\n" );
 
@@ -612,20 +609,22 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub3:'\n" );
+				fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
 				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
 				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut right to left\n" );
-				fprintf( fsub, "MZ,-&safeHeight							' drop tool to cut height\n" );
+				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
 				fprintf( fsub, "'\n\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'--  single cut left to right                                    --\n" );
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub4:'\n" );
+				fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
 				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
 				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut left to right\n" );
-				fprintf( fsub, "MZ,-&safeHeight							' drop tool to cut height\n" );
+				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
 				fprintf( fsub, "'\n\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fflush( fsub );
@@ -858,6 +857,12 @@ validate() {
 		rc = fail( rc, "No output file specified, use -o option" );
 	}
 
+	if( safeHeight == 0 ) {
+		rc = fail( rc, "No safe height specified, use -h option" );
+	} else if( safeHeight < 0 ) {
+		rc = fail( rc, "Negative safe heights(-h)  are not recommended" );
+	} 
+	
 	if( wlen == 0.0 ) {
 		rc = fail( rc, "No edge length specified, use -l option" );
 	} else if( wlen < 0.0 ) {
