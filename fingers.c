@@ -112,9 +112,9 @@ float	jointLen = 0.0;			// calculated segment length
 float	cutDepth = 0.0;			// max cut depth
 float	cutWidth = 0.0;			// max cut width
 float	moveSpeed = 0.08;		// actual machine number
-float	plungeSpeed = 0.05;	// actual machine number
-float	jogSpeed = 0.15;		// actual machine number
-float	jogPlungeSpeed = 0.15;	// actual machine number
+float	plungeSpeed = 2.0;		// actual machine number
+float	jogSpeed = 8.0;			// actual machine number
+float	jogPlungeSpeed = 5.0;	// actual machine number
 
 float	theCut = 0.0;
 float	passes = 0.0;
@@ -457,10 +457,13 @@ cut( int sideSelect, int id ) {
 											// setup per joint segment
 	X1  = baseX - halfDiameter;
 	X2  = baseX + thickness + halfDiameter;
-	Y1  = baseY + cutWidth +halfDiameter;
-	Y1a = baseY + halfDiameter - cutWidth ;
+
+	Y1  = baseY + cutWidth + halfDiameter;
+	Y1a = baseY + halfDiameter; // was  - cutWidth ;
+
 	Y2  = baseY + jointLen - cutWidth - halfDiameter;
 	Y2a = baseY + jointLen - halfDiameter;
+
 	Y3  = baseY + cutWidth + diameter;
 	Y4  = baseY + jointLen - diameter - cutWidth;	// had at end... + cutWidth;
 
@@ -480,13 +483,16 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "&Y2a = %.3f\n\n", Y2a);
 	fprintf( fout, "&Y3 = %.3f\n", Y3);
 	fprintf( fout, "&Y4 = %.3f\n", Y4);
+	fprintf( fout, "&halfDiameter = %.3f\n", halfDiameter);
+	fprintf( fout, "&startingX = %.3f\n" , X2);
+	fprintf( fout, "&endingX = %.3f\n", X1 );
 
 	fprintf( fout, "&startX = %.3f		' horizontal right edge X\n", baseX + thickness + halfDiameter );
 	fprintf( fout, "&endX = %.3f		' horizontal left edge X\n", baseX - halfDiameter );
 	fprintf( fout, "&lowY = %.3f		' vertical bottom edge Y\n", baseY + diameter );
 	fprintf( fout, "&hiY = %.3f			' vertical top edge Y\n", baseY + jointLen - diameter );
 	fprintf( fout, "&startY = %.3f		' vertical Y\n", baseY + halfDiameter );
-	fprintf( fout, "&endY = %.3f		' vertical Y\n\n", baseY + jointLen - halfDiameter );
+	fprintf( fout, "&endY = &startY		' vertical Y\n\n", baseY + jointLen - halfDiameter );
 	fprintf( fout, "&finishLine = %.3f\n", startLine + diameter );
 
 	fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
@@ -551,39 +557,26 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'\nsub2:'\n" );
 				fprintf( fsub, "SA									' absolute addressing\n" );
-				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				//fprintf( fsub, "&endingX = &X1\n" );
 				fprintf( fsub, "&startingY = &Y1\n" );
 				fprintf( fsub, "&endingY = &Y1\n" );
-
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				//fprintf( fsub, "&endingX = &X1\n" );
 				fprintf( fsub, "&startingY = %.3f\n", Y1a );
 				fprintf( fsub, "&endingY = %.3f\n", Y1a );
-
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-				//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				//fprintf( fsub, "&startingX = &X2				' setup abs addresses\n" );
-				//fprintf( fsub, "&endingX = &X1\n" );
 				fprintf( fsub, "&startingY = &Y2\n" );
 				fprintf( fsub, "&endingY = &Y2\n" );
-
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				//fprintf( fsub, "&startingX = &X1				' reverse directioncut\n" );
-				//fprintf( fsub, "&endingX = &X2\n" );
 				fprintf( fsub, "&startingY = &Y2A\n" );
 				fprintf( fsub, "&endingY = &Y2A\n" );
-
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub4						' make first cut \n\n" );
@@ -609,10 +602,13 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub3:'\n" );
-				fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
+				//fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
+				fprintf( fsub, "\tPRINT \"sub3> startingY = \", &startingY\n" );
+				fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
+				fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
 				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
-				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut right to left\n" );
+				fprintf( fsub, "M2,&endingX,&endingY					' cut right to left\n" );
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
 				fprintf( fsub, "'\n\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
@@ -620,10 +616,13 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub4:'\n" );
-				fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
-				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
+				//fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
+				fprintf( fsub, "\tPRINT \"sub4> startingY = \", &startingY\n" );
+				fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
+				fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
+				fprintf( fsub, "J3,&endingX,&startingY,&safeHeight	' position tool for cut\n" );
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
-				fprintf( fsub, "M3,&endingX,&endingY-&depth				' cut left to right\n" );
+				fprintf( fsub, "M2,&startingX,&endingY					' cut left to right\n" );
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
 				fprintf( fsub, "'\n\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
