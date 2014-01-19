@@ -15,6 +15,8 @@
 // use fg in preview mode for single stepping the bot.
 // use got line to bypass setup/initialization code.
 // look for edge taylor (sp?) on shopbot site
+// speed 100/30 == ms 1.66,0.50			100/60		30/60
+//  	  50/15 == ms 0.83,0.25			 50/60		15/60
 
 
 #include <stdio.h>
@@ -33,7 +35,7 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?Bc:d:h:j:l:m:n:o:s:t:vw:"
+#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:p:S:s:t:vw:"
 
 // command line parameters...
 //  -B put dummy command in clipboard
@@ -51,6 +53,17 @@
 //	-v verbose flag
 //  -c cutWidth
 
+#if 0
+static struct option long_options[] = {
+	{"add",     required_argument, 0,  0 },
+	{"append",  no_argument,       0,  0 },
+	{"delete",  required_argument, 0,  0 },
+	{"verbose", no_argument,       0,  0 },
+	{"create",  required_argument, 0, 'c'},
+	{"file",    required_argument, 0,  0 },
+	{0,         0,                 0,  0 }
+};
+#endif
 
 #define	TITLE_MAX 		50
 
@@ -111,10 +124,12 @@ float	diameter = 0.0;			// tool diameter provided by the user
 float	jointLen = 0.0;			// calculated segment length
 float	cutDepth = 0.0;			// max cut depth
 float	cutWidth = 0.0;			// max cut width
-float	moveSpeed = 0.08;		// actual machine number
-float	plungeSpeed = 2.0;		// actual machine number
-float	jogSpeed = 8.0;			// actual machine number
-float	jogPlungeSpeed = 5.0;	// actual machine number
+
+int		spindleSpeed = 0;		// actual machine number
+float	moveSpeed = 0.0;		// actual machine number
+float	plungeSpeed = 0.0;		// actual machine number
+float	jogSpeed = 0.0;			// actual machine number
+float	jogPlungeSpeed = 0.0;	// actual machine number
 
 float	theCut = 0.0;
 float	passes = 0.0;
@@ -149,6 +164,10 @@ size_t	subSize = 0;			// maximum subroutine size allowed
 size_t	subUsed = 0;			// maximum subroutine size used
 
 char * pgm = NULL;
+int		argCount = 0;
+char ** args;
+
+//extern int optind, opterr, optopt;
 
 int
 main( int argc, char * argv[] )
@@ -162,6 +181,7 @@ main( int argc, char * argv[] )
 
 	memset( fn, 0, PATH_MAX );
 	pgm = argv[ 0 ];
+	argCount = argc; args = argv;
 	while((ch = getopt(argc,argv, OPTION_STRING )) != -1) {
 		switch( ch ) {
       default:	//  '?' usually
@@ -192,8 +212,20 @@ main( int argc, char * argv[] )
 		safeHeight = atof( optarg );
         break;
 
+      case 'J': 						// jog(non-cut)  rate inches per second
+		jogSpeed = (atof( optarg ) / 60.0);	// possible surprise !
+        break;
+
+      case 'j': // number of joints
+		joints = atoi( optarg );
+        break;
+
       case 'l': 						// workpiece length
 		wlen = atof( optarg );
+        break;
+
+      case 'M': 						// move(cut)  rate inches per second
+		moveSpeed = (atof( optarg ) / 60.0);	// possible surprise !
         break;
 
       case 'm': 						// cutting method
@@ -202,6 +234,19 @@ main( int argc, char * argv[] )
 
       case 'n': // job name
           name = optarg;				// job name
+        break;
+
+      case 'o': // output filename
+          strncpy( fn, optarg, PATH_MAX);
+		  fnSet = 1;
+        break;
+      
+      case 'p': 						// plunge rates
+		plungeSpeed = jogPlungeSpeed  = (atof( optarg ) / 60.0);	// one for all, now
+        break;
+
+      case 'S': 						// spindle speed
+		spindleSpeed = atoi( optarg );
         break;
 
       case 's': // edge side A/B
@@ -230,19 +275,10 @@ main( int argc, char * argv[] )
 		thickness = atof( optarg );
         break;
 
-      case 'j': // number of joints
-		joints = atoi( optarg );
-        break;
-
       case 'v': // verbose
 		verbose |= VERBOSE;
         break;
 
-      case 'o': // output filename
-          strncpy( fn, optarg, PATH_MAX);
-		  fnSet = 1;
-        break;
-      
 	  case 'w': 						// cut width
 		cutWidth = atof( optarg );
         break;
@@ -290,12 +326,15 @@ usage() {
 	fprintf( stderr, "%s - %s\n", PGM_NAME, PGM_VERSION );
 	fprintf( stderr, "%s - {%s}\n", pgm, OPTION_STRING );
 	fprintf( stderr, "\n\n" );
-	fprintf( stderr, "\t%s - %s\n", "?", "Ask for help." );
+	fprintf( stderr, "\t%s - %s\n", "?","Ask for help." );
 	fprintf( stderr, "\t%s - %s\n", "B","Put dummy command line in clipboard, for pasting....");
 	fprintf( stderr, "\t%s - %s\n", "c","Maximum vertical tool cut depth, per pass.");				// cutDepth
 	fprintf( stderr, "\t%s - %s\n", "d","Tool diameter.");
+	fprintf( stderr, "\t%s - %s\n", "h","Safe tool height.");
+	fprintf( stderr, "\t%s - %s\n", "J","Jog ( non-cut ) speed. inches per second" );
 	fprintf( stderr, "\t%s - %s\n", "j","Number of joint segments.");
 	fprintf( stderr, "\t%s - %s\n", "l","Edge length." );
+	fprintf( stderr, "\t%s - %s\n", "M","Move ( cut ) speed. inches per second" );
 	fprintf( stderr, "\t%s - %s\n", "m","Cut method 1 or  2. Method one is the default." );
 	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
 	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
@@ -314,8 +353,8 @@ FILE *	cb;
 	if( cb == NULL ) {
 		fprintf( stderr, "Error openinmg clipboard...\n\n" );
 	}
-	// #define	OPTION_STRING	"?Bc:d:j:l:n:o:s:t:vw:"
-	fprintf( cb, "%s -c -d -j -l -n -o -s -t -w", pgm );
+	//#define	OPTION_STRING	"?Bc:d:h:j:l:m:n:o:p:s:t:vw:"
+	fprintf( cb, "%s -c -d -h -J -j -l -M -m -n -o -p -s -t -w", pgm );
 	fclose( cb );
 }
 
@@ -325,8 +364,15 @@ FILE *	cb;
 
 void
 summary( char * n, char * filename ) {
+	int	i;
+
 	fprintf( fout, "'\n'Job summary for %s\n", n );
-	fprintf( fout, "'verbose\t%d\n", verbose );
+	fprintf( fout, "'command line: " );
+	for( i=0; i < argCount; i++ ) {
+		fprintf( fout, "%s ", *args++ ); 
+	}
+
+	fprintf( fout, "\n'\n'verbose\t%d\n", verbose );
 	fprintf( fout, "'filename\t%s\n", filename );
 	fprintf( fout, "'workpiece length\t%.3f\n", wlen );
 	fprintf( fout, "'workpiece thickness\t%.3f\n", thickness );
@@ -563,8 +609,8 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
 
-				fprintf( fsub, "&startingY = %.3f\n", Y1a );
-				fprintf( fsub, "&endingY = %.3f\n", Y1a );
+				fprintf( fsub, "&startingY = &Y1a\n" );
+				fprintf( fsub, "&endingY = &Y1a\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
@@ -653,9 +699,9 @@ header( char * t ) {
 	fprintf( fout, "C#,90				 	'Lookup offset values\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "SA								' absolute addressing\n" );
-	fprintf( fout, "TR,12000,1\n" );
-	fprintf( fout, "MS,%.3f,%.3f					' move speed: cut,plunge\n", moveSpeed, plungeSpeed );
-	fprintf( fout, "JS,%.3f,%.3f					' jog speeds\n", jogSpeed, jogPlungeSpeed );
+	fprintf( fout, "TR,%d,1\n", spindleSpeed );
+	fprintf( fout, "MS,%.3f,%.3f					' move speed: XY,Z\n", moveSpeed, plungeSpeed );
+	fprintf( fout, "JS,%.3f,%.3f					' jog speeds  XY,Z\n", jogSpeed, jogPlungeSpeed );
 	fprintf( fout, "VC,%.3f						' cutter diameter\n", diameter );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'\n" );
@@ -856,6 +902,28 @@ validate() {
 		rc = fail( rc, "No output file specified, use -o option" );
 	}
 
+	if( spindleSpeed == 0 ) {
+		rc = fail( rc, "No spindle speed specified, use -S option" );
+	}
+	
+	if( jogSpeed == 0.0 ) {
+		rc = fail( rc, "No jog speed specified, use -J option" );
+	} else if( moveSpeed > 5.0 ) {
+		rc = fail( rc, "Jog speeds above 5.0 are not recommended. Use -J to change" );
+	} 
+	
+	if( moveSpeed == 0.0 ) {
+		rc = fail( rc, "No move speed specified, use -M option" );
+	} else if( moveSpeed > 5.0 ) {
+		rc = fail( rc, "Move speeds above 5.0 are not recommended. Use -M to change" );
+	} 
+	
+	if( plungeSpeed == 0.0 ) {
+		rc = fail( rc, "No plunge speed specified, use -p option" );
+	} else if( plungeSpeed > 5.0 ) {
+		rc = fail( rc, "Plunge speeds above 5.0 are not recommended. Use -p to change" );
+	} 
+	
 	if( safeHeight == 0 ) {
 		rc = fail( rc, "No safe height specified, use -h option" );
 	} else if( safeHeight < 0 ) {
