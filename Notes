@@ -30,8 +30,8 @@
 	+----------------+		-- baseY - bottom edge of segment
   | |                |  |
   | |                |  +---- X2    right edge of X
-  | |                +------- right edge of work piece
-  | +------------------------ baseX - left edge of work piece
+  | |                +------- X2a   right edge of work piece (thickness)
+  | +------------------------ X1a/baseX - left edge of work piece
   +-------------------------- X1    left edge of X
 
 minimum joint length is diameter + (2 * cutWidth)
@@ -54,6 +54,39 @@ cutting procedure:
 	(5) clear from Y4 to Y3
 		for( j=Y4; j > Y3; j - step )
 			clear X2,j to X1,j
+
+
+
+	+--+----------+--+		-- top edge of segment
+	+                +
+	+----------------+		-- Y2a top edge trim line
+	+                +
+	+                +		-- Y2 top cut line (second cut )
+	+                +
+	+----------------+
+	+                +		-- Y4 clearing start
+	+                +
+	+                +
+	+                +		** step is the amount the cut line moves between cuts. (e.g. cutWidth)
+	+                +
+	+                +
+	+                +
+	+                +
+	+                +
+	+                +
+	+                +
+	+                +
+	+                +
+	+----------------+		-- Y3 finishLine	different for each segment
+	+                +
+	+                +      -- Y1 bottom cut line	( first cut )
+	+                +
+	+----------------+		
+	+                +		-- Y1a
+	+--+----------+--+		-- baseY - bottom edge of segment
+       |          |
+       |          +---------- X3   X2a - halfDiameter
+       +--------------------  X4   X1a + halfDiameter
 
 
 

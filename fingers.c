@@ -35,19 +35,23 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:p:S:s:t:vw:"
+#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:t:vw:"
 
 // command line parameters...
 //  -B put dummy command in clipboard
 //  -c cutDepth
 //  -d tool diameter
 //  -h safe height for tool
+//  -J jog speed
 //  -j number of joint segments
 //  -l length of edge
+//	-M move speed
 //	-m cut method
 //	-n job name
 //	-o output filename
+//	-P plunge speed
 //	-l	workpiece length
+//	-S spindle speed
 //	-s joint side to cut
 //	-t	workpiece thickness
 //	-v verbose flag
@@ -241,7 +245,7 @@ main( int argc, char * argv[] )
 		  fnSet = 1;
         break;
       
-      case 'p': 						// plunge rates
+      case 'P': 						// plunge rates
 		plungeSpeed = jogPlungeSpeed  = (atof( optarg ) / 60.0);	// one for all, now
         break;
 
@@ -338,6 +342,8 @@ usage() {
 	fprintf( stderr, "\t%s - %s\n", "m","Cut method 1 or  2. Method one is the default." );
 	fprintf( stderr, "\t%s - %s\n", "n","Job name." );
 	fprintf( stderr, "\t%s - %s\n", "o","ShopBot file name." );
+	fprintf( stderr, "\t%s - %s\n", "P","Plunge speed" );
+	fprintf( stderr, "\t%s - %s\n", "S","Spinfle speed" );
 	fprintf( stderr, "\t%s - %s\n", "s","Side selection. A, B, or C. Default is both (C)." );
 	fprintf( stderr, "\t%s - %s\n", "t","Work piece thickness, i.e. finger length..." );
 	fprintf( stderr, "\t%s - %s\n", "v","Be verbose." );
@@ -353,8 +359,8 @@ FILE *	cb;
 	if( cb == NULL ) {
 		fprintf( stderr, "Error openinmg clipboard...\n\n" );
 	}
-	//#define	OPTION_STRING	"?Bc:d:h:j:l:m:n:o:p:s:t:vw:"
-	fprintf( cb, "%s -c -d -h -J -j -l -M -m -n -o -p -s -t -w", pgm );
+	//#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:t:vw:"
+	fprintf( cb, "%s -c -d -h -J -j -l -M -m -n -o -P -S -s -t -v -w", pgm );
 	fclose( cb );
 }
 
@@ -464,9 +470,9 @@ void
 cut( int sideSelect, int id ) {
 
 	int	segment = id - 1;					// computers count from zero...
-	theCut = thickness;
+	theCut = thickness;						// total depth of cut required
 	passes = evenCuts( &theCut, (diameter / MAX_DEPTH_RATIO) );
-	depth = 0.0;				// starting depth
+	depth = 0.0;							// starting depth
 	halfDiameter = diameter / 2.0;			// horizontal position stepping
 
 	if( theCut >= halfDiameter ) {
@@ -584,8 +590,6 @@ cut( int sideSelect, int id ) {
 				fprintf( fout, "&depth = %.3f	' set cutting depth\n", depth );
 				fprintf( fout, "\tGOSUB	sub2	' cut segment at depth %.3f\n", depth );
 			}
-			//fprintf( fout, "' -- setup next pass -- \n" );
-			//fprintf( fout, "\tGOSUB	sub2	' cut segment from work piece\n" );
 			fprintf( fout, "'------------------------------------------------------------------\n" );
 
 			fprintf( fout, "'------------------------------------------------------------------\n" );
@@ -632,11 +636,10 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "&startingY = &Y4\n" );		// fixing....PRPBLEM... needs to be different in 
 				for( y=Y4; y > Y3; y -= step ) {
 
-					//fprintf( fsub, "&startingY = %.3f\n", y );	// PRPBLEM... needs to be different in 
-					fprintf( fsub, "&endingY = &startingY\n" );	// different segments...
+					fprintf( fsub, "&endingY = &startingY\n" );		// different in different segments...
 
 					fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
-					fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+					//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n\n" );
 					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
@@ -648,21 +651,28 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub3:'\n" );
-				//fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
-				fprintf( fsub, "\tPRINT \"sub3> startingY = \", &startingY\n" );
-				fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
-				fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
+				if( v() ) {
+					fprintf( fsub, "\tPRINT \"sub3> startingY = \", &startingY\n" );
+					fprintf( fsub, "\tPRINT \"sub3> startingY = \", &startingY\n" );
+					fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
+					fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
+				}
 				fprintf( fsub, "J3,&startingX,&startingY,&safeHeight	' position tool for cut\n" );
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
 				fprintf( fsub, "M2,&endingX,&endingY					' cut right to left\n" );
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
-				fprintf( fsub, "'\n\tRETURN'\n'\n" );
+				fprintf( fsub, "\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'--  single cut left to right                                    --\n" );
 				fprintf( fsub, "'--  requires startingX, endingX, startingY, endingY             --\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "\nsub4:'\n" );
-				//fprintf( fsub, "\tPRINT \"startingY = \", &startingY\n" );
+				if( v() ) {
+					fprintf( fsub, "\tPRINT \"sub4> startingY = \", &startingY\n" );
+					fprintf( fsub, "\tPRINT \"sub4> startingY = \", &startingY\n" );
+					fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
+					fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
+				}
 				fprintf( fsub, "\tPRINT \"sub4> startingY = \", &startingY\n" );
 				fprintf( fsub, "\tPRINT \"lowY = \", &startingY - &halfDiameter\n" );
 				fprintf( fsub, "\tPRINT \"hiY = \", &startingY + &halfDiameter\n" );
@@ -670,7 +680,7 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
 				fprintf( fsub, "M2,&startingX,&endingY					' cut left to right\n" );
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
-				fprintf( fsub, "'\n\tRETURN'\n'\n" );
+				fprintf( fsub, "\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fflush( fsub );
 			}
@@ -747,7 +757,7 @@ evenCuts( float * cutD, float step ) {
 	float cut = * cutD;
 	float passes = round( cut / step );
 
-	*cutD = thickness / passes;
+	*cutD = thickness / passes;					// even cuts per pass
 
 	return passes;
 }
@@ -1078,5 +1088,12 @@ finalCheck() {
 		fprintf( stderr, "Change either -c or -d options, or both, to correct the problem.\n" );
 	}
 
+}
+
+// v - check verbose
+int
+v( ) 
+{
+	return verbose;
 }
 
