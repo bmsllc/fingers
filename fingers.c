@@ -35,7 +35,7 @@
 
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
-#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:t:vw:"
+#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:T:t:vw:"
 
 // command line parameters...
 //  -B put dummy command in clipboard
@@ -53,6 +53,7 @@
 //	-l	workpiece length
 //	-S spindle speed
 //	-s joint side to cut
+//	-T	test mode workpiece thickness
 //	-t	workpiece thickness
 //	-v verbose flag
 //  -c cutWidth
@@ -88,6 +89,7 @@ char *	sides[] = { "Unknown", "Side A", "Side B", "Both sides" };
 #define	METHOD_ZERO				0
 #define	METHOD_ONE				1
 #define	METHOD_TWO				2
+#define	METHOD_THREE			3
 
 #define	FALSE					0
 #define	TRUE					1
@@ -114,6 +116,7 @@ FILE *	fsub = NULL;
 
 int		method = METHOD_ZERO;	// no default cut method
 int		didSub2 = FALSE;		// one sub2 per file
+int		didSub5 = FALSE;		// one sub5 per file
 char	fn[ PATH_MAX ];			// where to put the ShopBot program
 char	fname[ PATH_MAX ];
 char	subfname[ PATH_MAX ];
@@ -122,6 +125,7 @@ char  * name = NULL;			// name provided by the user
 int		side = SIDE_UNKNOWN;	// which side of the joint we are programming for
 float	wlen = 0.0;				// the length of the joint
 int		joints = 0;				// how many segments along the joint
+float	testThickness = -1.0;	// test mode thickness of the work piece
 float	thickness = 0.0;		// thickness of the work piece
 float	safeHeight = 0.0;		// tool safe height
 float	diameter = 0.0;			// tool diameter provided by the user
@@ -275,6 +279,10 @@ main( int argc, char * argv[] )
 		  }
         break;
 
+      case 'T': // TEST mode workpiece thickness
+		testThickness = atof( optarg );
+        break;
+
       case 't': // workpiece thickness
 		thickness = atof( optarg );
         break;
@@ -360,7 +368,7 @@ FILE *	cb;
 		fprintf( stderr, "Error openinmg clipboard...\n\n" );
 	}
 	//#define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:t:vw:"
-	fprintf( cb, "%s -c -d -h -J -j -l -M -m -n -o -P -S -s -t -v -w", pgm );
+	fprintf( cb, "%s -c -d -h -J -j -l -M -m -n -o -P -S -s -T -t -v -w", pgm );
 	fclose( cb );
 }
 
@@ -388,6 +396,12 @@ summary( char * n, char * filename ) {
 	fprintf( fout, "'cut width \t%.3f\n", cutWidth );
 	fprintf( fout, "'tool safe height \t%.3f\n", safeHeight );
 	fprintf( fout, "\n'Assumes workpiece is homed with no offset....\n'\n" );
+
+	if( testThickness > 0.0 ) {
+		fprintf( fout, "\n'\n'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'\n" );
+		fprintf( fout, "'This program is in TEST MODE and it will terminate early!!\n" );
+		fprintf( fout, "'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'\n'\n'\n" );
+	}
 }
 
 //
@@ -589,6 +603,11 @@ cut( int sideSelect, int id ) {
 					depth = thickness;
 				fprintf( fout, "&depth = %.3f	' set cutting depth\n", depth );
 				fprintf( fout, "\tGOSUB	sub2	' cut segment at depth %.3f\n", depth );
+				if( testThickness > 0.0 ) {			// just a test mode to shorten run time
+					if( depth >= testThickness ) {	// abort run early
+						break;
+					}
+				}
 			}
 			fprintf( fout, "'------------------------------------------------------------------\n" );
 
@@ -685,6 +704,8 @@ cut( int sideSelect, int id ) {
 				fflush( fsub );
 			}
 			break;
+
+
 		}
 }
 
