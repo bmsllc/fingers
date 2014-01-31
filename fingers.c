@@ -393,7 +393,7 @@ summary( char * n, char * filename ) {
 	fprintf( fout, "'joints \t%d\n", joints );
 	fprintf( fout, "'jointLen \t%.3f\n", jointLen );
 	fprintf( fout, "'tool diameter \t%.3f\n", diameter );
-	fprintf( fout, "'cut width \t%.3f\n", cutWidth );
+	fprintf( fout, "'usual cut width \t%.3f\n", cutWidth );
 	fprintf( fout, "'tool safe height \t%.3f\n", safeHeight );
 	fprintf( fout, "\n'Assumes workpiece is homed with no offset....\n'\n" );
 
@@ -630,19 +630,19 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "&endingY = &Y1\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
+				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n" );
 
 				fprintf( fsub, "&startingY = &Y1a\n" );
 				fprintf( fsub, "&endingY = &Y1a\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
+				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n" );
 
 				fprintf( fsub, "&startingY = &Y2\n" );
 				fprintf( fsub, "&endingY = &Y2\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n\n" );
+				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n" );
 
 				fprintf( fsub, "&startingY = &Y2A\n" );
 				fprintf( fsub, "&endingY = &Y2A\n" );
@@ -659,7 +659,7 @@ cut( int sideSelect, int id ) {
 
 					fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
 					//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
-					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n\n" );
+					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n" );
 					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
 				fprintf( fsub, "\tRETURN'\n'\n" );
