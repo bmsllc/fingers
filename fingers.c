@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
+#define	M2A_METHOD		1			// 1 for the old method two
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
 #define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:T:t:vw:"
@@ -597,7 +598,7 @@ cut( int sideSelect, int id ) {
 			fprintf( fout, "&lenY = %.3f	' length of y edge\n", jointLen);	// 
 
 
-			// compute number of times sub2 will be called per segment
+			// based on the depth, compute number of times sub2 will be called per segment
 			for( depth = theCut; depth <= thickness; depth += theCut) {
 				if( depth > thickness )
 					depth = thickness;
@@ -650,6 +651,10 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub4						' make first cut \n\n" );
 
+#if	M2A_METHOD
+				// ///////////////////////////////////////////////////////////////////////////////
+				// this section cuts the segment in a linear fashion from the top to the bottom //
+				// ///////////////////////////////////////////////////////////////////////////////
 				float	y;
 				fprintf( fsub, "\n'clearing the segment from top to bottom: %.3f, %.3f\n", Y4, Y3 );
 				fprintf( fsub, "&startingY = &Y4\n" );		// fixing....PRPBLEM... needs to be different in 
@@ -663,7 +668,6 @@ cut( int sideSelect, int id ) {
 					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
 				fprintf( fsub, "\tRETURN'\n'\n" );
-
 				// sub3 does the real segment cut at a depth determined by sub2.
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'--  single cut right to left                                    --\n" );
@@ -701,6 +705,19 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
 				fprintf( fsub, "\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
+#else
+				// ///////////////////////////////////////////////////////////////////////////////
+				// this section cuts the segment using a perimeter cut                          //
+				// ///////////////////////////////////////////////////////////////////////////////
+				float	y;
+				fprintf( fsub, "\n'clearing the segment usinng perimeter cuts.\n" );
+				fprintf( fsub, "&TF = &Y4\n" );		// establish the perimeter
+				fprintf( fsub, "&BF = &Y3\n" );		// using shopbot variables
+				fprintf( fsub, "&LF = &X1a\n" );
+				fprintf( fsub, "&RF = &X2a\n" );
+				for( y=Y4; y > Y3; y -= step ) {
+				}
+#endif
 				fflush( fsub );
 			}
 			break;
