@@ -8,7 +8,7 @@
 // Softwood Cedar Pine Spruce
 // Hardwood Ash Aspen Balsa Birch Cherry Elm Hazel Linden/ Lime/ Basswood Mahogany Maple Oak Teak Walnut
 /*
-:! gcc -g -o fingers %
+:! gcc -Wall -g -o fingers %
 */
 //
 // debug notes:
@@ -18,6 +18,9 @@
 // speed 100/30 == ms 1.66,0.50			100/60		30/60
 //  	  50/15 == ms 0.83,0.25			 50/60		15/60
 
+#define DO_PRAGMA(x) _Pragma (#x)
+#define TODO(x) DO_PRAGMA(message ("TODO - " #x))
+//TODO(Remember to fix this)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,6 +112,9 @@ void sub1( void );
 void sub2( void );
 void errorExit( int e  );
 float evenCuts( float * cutD, float ratio );
+int v( void ) ;
+int checkWIP( void );
+void adjust( void );
 
 
 // foutput to stdout unless a filename is given;
@@ -300,14 +306,14 @@ main( int argc, char * argv[] )
 	}
 
 	if( ! validate() ) {
-		  	fprintf( stderr, "\nThe job validation failed!!\n", fn );
-		  	fprintf( stderr, "Please review your job options and retry.\n", fn );
+		  	fprintf( stderr, "\nThe job validation failed!!\n" );
+		  	fprintf( stderr, "Please review your job options and retry.\n" );
 			exit( -2 );
 	}
 
 	switch( side ) {
 		default :
-		  	fprintf( stderr, "Side selection mix-up, quitting.\n", fn );
+		  	fprintf( stderr, "Side selection mix-up, quitting.\n"  );
 			break;
 
 		case SIDE_BOTH:
@@ -515,11 +521,11 @@ cut( int sideSelect, int id ) {
 
 	high = top - diameter;					// end of work area after top cut
 	low = bot + diameter;					// start of work area after bot cut
-	float toolHeight = 0.0;
+//	float toolHeight = 0.0;
 
 	float	startLine = baseY + halfDiameter;			// Y1
-	float	topLine = baseY + jointLen - halfDiameter;	// Y2
-	float	finishLine = baseY + diameter;				// Y3
+//	float	topLine = baseY + jointLen - halfDiameter;	// Y2
+//	float	finishLine = baseY + diameter;				// Y3
 
 											// setup per joint segment
 	X1  = baseX - halfDiameter;
@@ -559,7 +565,7 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "&lowY = %.3f		' vertical bottom edge Y\n", baseY + diameter );
 	fprintf( fout, "&hiY = %.3f			' vertical top edge Y\n", baseY + jointLen - diameter );
 	fprintf( fout, "&startY = %.3f		' vertical Y\n", baseY + halfDiameter );
-	fprintf( fout, "&endY = &startY		' vertical Y\n\n", baseY + jointLen - halfDiameter );
+	fprintf( fout, "&endY = &startY		' vertical Y\n\n" );
 	fprintf( fout, "&finishLine = %.3f\n", startLine + diameter );
 
 	fprintf( fout, "&bot = %.3f		' bottom of segment area\n",  bot);	// 
@@ -652,6 +658,7 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "\tGOSUB	sub4						' make first cut \n\n" );
 
 #if	M2A_METHOD
+#pragma message "Compiling " __FILE__ " - for old method 2"
 				// ///////////////////////////////////////////////////////////////////////////////
 				// this section cuts the segment in a linear fashion from the top to the bottom //
 				// ///////////////////////////////////////////////////////////////////////////////
@@ -706,8 +713,11 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "\tRETURN'\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 #else
+#pragma message "Compiling " __FILE__ " - for new method 2"
 				// ///////////////////////////////////////////////////////////////////////////////
 				// this section cuts the segment using a perimeter cut                          //
+				// the perimeter is based on shopbot variables: Y4,Y3,X1a, and X2a and use      //
+				// shopbot variables: TF,BF,LF, and RF for the actual cutting.                  //
 				// ///////////////////////////////////////////////////////////////////////////////
 				float	y;
 				fprintf( fsub, "\n'clearing the segment usinng perimeter cuts.\n" );
@@ -715,7 +725,15 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "&BF = &Y3\n" );		// using shopbot variables
 				fprintf( fsub, "&LF = &X1a\n" );
 				fprintf( fsub, "&RF = &X2a\n" );
-				for( y=Y4; y > Y3; y -= step ) {
+				int wip;
+				while( wip = checkWIP() ) {			// check first, then work
+					// work J3
+					// MZ
+					// M3  - first side
+					// M3  - second side
+					// M3  - third side
+					// M3  - fourth side
+					adjust();
 				}
 #endif
 				fflush( fsub );
@@ -733,7 +751,7 @@ void
 header( char * t ) {
 
 	time_t	now = 0;
-	char *	today ;
+//	char *	today ;
 	
 	time( &now);
 
@@ -743,7 +761,7 @@ header( char * t ) {
 	fprintf( fout, "'\n" );
 	fprintf( fout, "'SHOPBOT FILE IN INCHES\n" );
 	fprintf( fout, "' 25 is UNIT, 0 or 1. asuming 0 means inches...\n" );
-	fprintf( fout, "IF %(25)=1 THEN GOTO UNIT_ERROR	'check to see software is set to standard\n" );
+	fprintf( fout, "IF %c(25)=1 THEN GOTO UNIT_ERROR	'check to see software is set to standard\n", '%' );	// avoids format warning
 	fprintf( fout, "C#,90				 	'Lookup offset values\n" );
 	fprintf( fout, "'\n" );
 	fprintf( fout, "SA								' absolute addressing\n" );
@@ -1101,6 +1119,7 @@ finalCheck() {
 	int	rc = 1;
 	char	buf[ BUFLEN ];
 
+TODO(Remember to complete this)
 // needs review...
 	if(  (X1 <= 0.0) || (X2 <= 0.0) ) {
 		rc = fail( rc, "There is a basic problem with the horizontal math of the joint, review the summary and try again." );
@@ -1126,6 +1145,8 @@ finalCheck() {
 		fprintf( stderr, "Change either -c or -d options, or both, to correct the problem.\n" );
 	}
 
+	return 0;
+
 }
 
 // v - check verbose
@@ -1133,5 +1154,22 @@ int
 v( ) 
 {
 	return verbose;
+}
+
+// check if permimeter work is still in progress
+// wip is true until
+//		the left fence passes the right fence or
+//		the top fence passes the bottom fence
+
+int
+checkWIP() {
+	return TRUE;
+}
+
+// adjust shopbot variables
+// move fences towards the center by step amount
+
+void
+adjust() {
 }
 
