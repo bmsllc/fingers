@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
-#define	M2A_METHOD		1			// 1 for the old method two
+#define	M2A_METHOD		0			// 1 for the old method two
 #define	PGM_NAME		"Fingers"
 #define	PGM_VERSION		"1.0"
 #define	OPTION_STRING	"?Bc:d:h:J:j:l:M:m:n:o:P:S:s:T:t:vw:"
@@ -114,7 +114,6 @@ void errorExit( int e  );
 float evenCuts( float * cutD, float ratio );
 int v( void ) ;
 int checkWIP( void );
-void adjust( void );
 
 
 // foutput to stdout unless a filename is given;
@@ -152,13 +151,19 @@ float	depth = 0.0;
 float	minimumSegment = 0.0;
 float	halfDiameter = 0.0;
 float	X1  = 0.0;
+float	X1a = 0.0;
 float	X2  = 0.0;
+float	X2a = 0.0;
 float	Y1  = 0.0;
 float	Y1a = 0.0;
 float	Y2  = 0.0;
 float	Y2a = 0.0;
 float	Y3  = 0.0;
 float	Y4  = 0.0;
+float	TF = 0.0;
+float	BF = 0.0;
+float	LF = 0.0;
+float	RF = 0.0;
 
 int		verbose = 0;
 #define	VERBOSE 	1
@@ -465,7 +470,7 @@ generate( int si ) {
 	if( fout != NULL ) {
 		fclose( fout );
 	}
-	if( fsub != NULL ) {
+	if( fsub != NULL ) {	// also need to delete the work file....
 		fclose( fsub );
 	}
 
@@ -529,7 +534,9 @@ cut( int sideSelect, int id ) {
 
 											// setup per joint segment
 	X1  = baseX - halfDiameter;
+	X1a = baseX ;
 	X2  = baseX + thickness + halfDiameter;
+	X2a = baseX + thickness - halfDiameter;
 
 	Y1  = baseY + cutWidth + halfDiameter;
 	Y1a = baseY + halfDiameter; // was  - cutWidth ;
@@ -549,7 +556,9 @@ cut( int sideSelect, int id ) {
 	fprintf( fout, "					' define segment work area\n" );
 	fprintf( fout, "&safeHeight = %.3f	' left edge Y\n\n",  safeHeight );	// 
 	fprintf( fout, "&X1 = %.3f\n", X1);
+	fprintf( fout, "&X1a = %.3f\n", X1a);
 	fprintf( fout, "&X2 = %.3f\n\n", X2);
+	fprintf( fout, "&X2a = %.3f\n\n", X2a);
 	fprintf( fout, "&Y1 = %.3f\n", Y1);
 	fprintf( fout, "&Y1a = %.3f\n\n", Y1a);
 	fprintf( fout, "&Y2 = %.3f\n", Y2);
@@ -675,6 +684,45 @@ cut( int sideSelect, int id ) {
 					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
 				fprintf( fsub, "\tRETURN'\n'\n" );
+#else
+#pragma message "Compiling " __FILE__ " - for new method 2"
+				// ///////////////////////////////////////////////////////////////////////////////
+				// this section cuts the segment using a perimeter cut                          //
+				// the perimeter is based on shopbot variables: Y4,Y3,X1a, and X2a and use      //
+				// shopbot variables: TF,BF,LF, and RF for the actual cutting.                  //
+				// ///////////////////////////////////////////////////////////////////////////////
+				TF = Y4;			// establish fences
+				BF = Y3;
+				LF = X1a;
+				RF = X2a;
+
+				fprintf( fsub, "\n'clearing the segment usinng perimeter cuts.\n" );
+				fprintf( fsub, "&TF = &Y4\n" );		// establish the perimeter
+				fprintf( fsub, "&BF = &Y3\n" );		// using shopbot variables
+				fprintf( fsub, "&LF = &X1a\n" );
+				fprintf( fsub, "&RF = &X2a\n" );
+
+				fprintf( fsub, "\tMZ	&safeheight		' lift tool\n" );
+				fprintf( fsub, "\tJ2	&RF,&TF			' move to starting corner\n" );
+				int wip;
+				while( (wip = checkWIP()) ) {			// check first, then work
+					fprintf( fsub, "\tMZ	-&depth			' drop tool\n" );
+					fprintf( fsub, "\tM2	&RF,&BF			' cut right edge\n" );
+					fprintf( fsub, "\t&RF = &RF - &step		' adjust right fence\n" );
+					RF -= step;
+					fprintf( fsub, "\tM2	&LF,&BF			' cut bottom edge\n" );
+					fprintf( fsub, "\t&BF = &BF + &step		' adjust bottom fence\n" );
+					BF += step;
+					fprintf( fsub, "\tM2	&LF,&TF			' cut left edge\n" );
+					fprintf( fsub, "\t&LF = &LF + &step		' adjust left fence\n" );
+					LF += step;
+					fprintf( fsub, "\tM2	&RF,&TF			' cut top edge\n" );
+					fprintf( fsub, "\t&TF = &TF - &step		' adjust top fence\n" );
+					TF -= step;
+				}
+				fprintf( fsub, "\tMZ	&safeHeight			' raise tool\n" );
+				fprintf( fsub, "\tRETURN		'return from sub2\n'\n" );
+#endif
 				// sub3 does the real segment cut at a depth determined by sub2.
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
 				fprintf( fsub, "'--  single cut right to left                                    --\n" );
@@ -710,32 +758,8 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "MZ,-&depth								' drop tool to cut height\n" );
 				fprintf( fsub, "M2,&startingX,&endingY					' cut left to right\n" );
 				fprintf( fsub, "MZ,&safeHeight							' raise tool to safe height\n" );
-				fprintf( fsub, "\tRETURN'\n'\n" );
+				fprintf( fsub, "\tRETURN		' return from sub4\n'\n" );
 				fprintf( fsub, "'------------------------------------------------------------------\n" );
-#else
-#pragma message "Compiling " __FILE__ " - for new method 2"
-				// ///////////////////////////////////////////////////////////////////////////////
-				// this section cuts the segment using a perimeter cut                          //
-				// the perimeter is based on shopbot variables: Y4,Y3,X1a, and X2a and use      //
-				// shopbot variables: TF,BF,LF, and RF for the actual cutting.                  //
-				// ///////////////////////////////////////////////////////////////////////////////
-				float	y;
-				fprintf( fsub, "\n'clearing the segment usinng perimeter cuts.\n" );
-				fprintf( fsub, "&TF = &Y4\n" );		// establish the perimeter
-				fprintf( fsub, "&BF = &Y3\n" );		// using shopbot variables
-				fprintf( fsub, "&LF = &X1a\n" );
-				fprintf( fsub, "&RF = &X2a\n" );
-				int wip;
-				while( wip = checkWIP() ) {			// check first, then work
-					// work J3
-					// MZ
-					// M3  - first side
-					// M3  - second side
-					// M3  - third side
-					// M3  - fourth side
-					adjust();
-				}
-#endif
 				fflush( fsub );
 			}
 			break;
@@ -785,6 +809,7 @@ footer() {
 	fprintf( fout, "SO,1,0\n" );
 	fprintf( fout, "C#,91					'Run file explaining unit error\n" );
 	fprintf( fout, "END\n" );
+
 	switch( method ) {
 		default :	// error
 			fprintf( stderr, "Invalid method (%d) in footer\n", method );
@@ -1163,13 +1188,13 @@ v( )
 
 int
 checkWIP() {
-	return TRUE;
-}
+	int	rc = TRUE;
 
-// adjust shopbot variables
-// move fences towards the center by step amount
+	if( LF >= RF)
+		rc =  FALSE;
+	else if( TF <= BF )
+		rc =  FALSE;
 
-void
-adjust() {
+	return rc;
 }
 
