@@ -651,19 +651,19 @@ cut( int sideSelect, int id ) {
 				fprintf( fsub, "&startingY = &Y1a\n" );
 				fprintf( fsub, "&endingY = &Y1a\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
-				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+				//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n" );
 
 				fprintf( fsub, "&startingY = &Y2\n" );
 				fprintf( fsub, "&endingY = &Y2\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
-				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+				//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub3						' make first cut \n" );
 
 				fprintf( fsub, "&startingY = &Y2A\n" );
 				fprintf( fsub, "&endingY = &Y2A\n" );
 				fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
-				fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
+				//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 				fprintf( fsub, "\tGOSUB	sub4						' make first cut \n\n" );
 
 #if	M2A_METHOD
@@ -679,7 +679,6 @@ cut( int sideSelect, int id ) {
 					fprintf( fsub, "&endingY = &startingY\n" );		// different in different segments...
 
 					fprintf( fsub, "JZ,&safeheight						' raise tool\n" );
-					//fprintf( fsub, "J2,0.000000,0.000000				' jog home at start of cut\n" );
 					fprintf( fsub, "\tGOSUB	sub3						' make the cut \n" );
 					fprintf( fsub, "\t&startingY = &startingY - &step	' adjust for next cut\n\n" );
 				}
@@ -713,9 +712,13 @@ cut( int sideSelect, int id ) {
 					fprintf( fsub, "\tM2	&LF,&BF			' cut bottom edge\n" );
 					fprintf( fsub, "\t&BF = &BF + &step		' adjust bottom fence\n" );
 					BF += step;
+					if( (wip = checkWIP()) )
+						break;
 					fprintf( fsub, "\tM2	&LF,&TF			' cut left edge\n" );
 					fprintf( fsub, "\t&LF = &LF + &step		' adjust left fence\n" );
 					LF += step;
+					if( (wip = checkWIP()) )
+						break;
 					fprintf( fsub, "\tM2	&RF,&TF			' cut top edge\n" );
 					fprintf( fsub, "\t&TF = &TF - &step		' adjust top fence\n" );
 					TF -= step;
